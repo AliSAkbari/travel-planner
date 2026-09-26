@@ -1,0 +1,12 @@
+// Production build: compiles only src/ into dist/.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    // Stack traces from dist/ point back to the .ts source lines.
+    "sourceMap": true
+  },
+  "include": ["src"]
+}

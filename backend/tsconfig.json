@@ -1,0 +1,25 @@
+// Base config: type-checks source AND tests (`npm run typecheck`). Emits nothing;
+// tsconfig.build.json handles compilation so tests never end up in dist/.
+{
+  "compilerOptions": {
+    // Node 22 supports ES2023 natively, so no downlevelling is needed.
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    // Native Node ESM: relative imports must include the .js extension.
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    // Only load Node's globals; nothing else leaks into scope implicitly.
+    "types": ["node"],
+
+    "strict": true,
+    // arr[i] is typed `T | undefined`; matters when zipping Open-Meteo's daily arrays.
+    "noUncheckedIndexedAccess": true,
+    // Type-only imports must say `import type`, so compiled output is predictable.
+    "verbatimModuleSyntax": true,
+
+    // Skip type-checking inside node_modules: faster, and not our code to fix.
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src", "test", "vitest.config.ts"]
+}
