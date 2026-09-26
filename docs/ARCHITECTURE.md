@@ -81,6 +81,14 @@ Services depend on clients, never on Express. This lets services be unit tested 
 - Pinned in `.nvmrc` and in `engines` as a bounded range (`>=22.12.0 <23`).
 - Render's documentation warns that unbounded ranges resolve to the newest Node release.
 
+**Tooling**
+
+- **TypeScript ~6.0**, pinned. Angular 22 and typescript-eslint both support `>=6.0 <6.1`, so the whole repository uses one compiler version.
+- **Module system.** The backend is native ESM (`nodenext`), so relative imports carry a `.js` extension.
+- **Prettier** formats code, using one root config.
+- **ESLint** uses the recommended configs from `@eslint/js` and typescript-eslint, plus the type-aware `no-floating-promises` rule.
+- **Environment files.** `.env` is loaded by Node's built-in `--env-file-if-exists` in development, so the `dotenv` package is not needed.
+
 ## 4. API design
 
 ### Conventions
