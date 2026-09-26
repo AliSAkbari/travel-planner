@@ -7,9 +7,11 @@
   },
   "scripts": {
     "install:all": "npm --prefix backend ci",
+    "dev": "npm --prefix backend run dev",
     "build": "npm --prefix backend run build",
     "start": "npm --prefix backend start",
     "test": "npm --prefix backend test",
+    "test:coverage": "npm --prefix backend run test:coverage",
     "lint": "npm --prefix backend run lint",
     "typecheck": "npm --prefix backend run typecheck"
   }
