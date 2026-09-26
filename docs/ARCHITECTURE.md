@@ -279,18 +279,32 @@ External responses are cached in a small in-memory `TtlCache`: a `Map` plus expi
 - Lower latency.
 - Less exposure to upstream rate limits (notably ipapi.co's daily quota).
 
-### 5.6 Frontend state: signals and RxJS
+### 5.6 Frontend: state and UI
+
+**State**
 
 - **Signals** hold synchronous UI state: selected city, loading and error flags, auth state.
 - **RxJS** is used where streams need coordination.
   - City changes feed a `switchMap`, which cancels the in-flight request when the user switches cities quickly. Stale data for a previous city can never render.
   - Results are bridged to templates with `toSignal`.
 
-**UI**
+**UI: Angular Material**
 
-- No component library.
-- Styling uses CSS custom properties and a responsive card grid.
-- The city picker is a native `<select>`: accessible and mobile-friendly without extra code.
+- **Theme.** A Material 3 theme.
+- **Components.**
+  - The city picker is a `mat-select`.
+  - The description, current weather, and weekly forecast are Material cards (`mat-card`).
+  - Layout is a responsive card grid.
+- **Setup.**
+  - Installed with `ng add @angular/material`, so Material's version matches Angular's.
+  - Icons are self-hosted from an npm package, not loaded from Google Fonts. This keeps every asset on our own origin and avoids a third-party request.
+
+| | Angular Material (chosen) | No component library |
+|---|---|---|
+| Time to a polished UI | Fast: ready-made, consistent components | Slower: every component styled by hand |
+| Accessibility | Built in: keyboard navigation, ARIA, focus management | Must be implemented and tested by hand |
+| Bundle size | Larger | Minimal |
+| CSP | More runtime-injected styles to account for (see §9) | Fewer considerations |
 
 ### 5.7 Hosting: single Render web service
 
@@ -366,4 +380,10 @@ External responses are cached in a small in-memory `TtlCache`: a `Map` plus expi
 
 - **Proxy hops.** Render's proxy hop count, which sets `TRUST_PROXY_HOPS`. Checked on the skeleton deploy.
 - **ipapi.co from Render.** Whether ipapi.co serves requests from Render's egress IPs without rate limiting. Checked on the skeleton deploy.
-- **CSP and Angular.** Whether Angular's production build needs CSP adjustments, for example for inlined critical CSS. Checked in the frontend phase.
+- **CSP with Angular and Material.** Whether the production build works under helmet's CSP. Angular adds component styles at runtime, and its build can inline critical CSS. Material increases the number of runtime styles. Verified in the browser against the production build during the frontend phase, not assumed.
+
+## 10. Planned extras (time permitting)
+
+- **CI.** A GitHub Actions workflow that runs typecheck, lint, and tests on every push.
+- **Date forecast.** The optional forecast endpoint for a chosen date (§4).
+- **End-to-end test.** One Playwright test: log in, then view a city.
