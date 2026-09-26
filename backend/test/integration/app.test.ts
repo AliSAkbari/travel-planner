@@ -28,17 +28,11 @@ describe('GET /healthz', () => {
   });
 });
 
-describe('error handling', () => {
-  it('returns a JSON 404 in the standard shape for unknown /api routes', async () => {
-    const res = await request(app).get('/api/does-not-exist');
-
-    expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
-  });
-
+// Unknown-route (401/404) behaviour is covered in auth.test.ts, since it depends on the token.
+describe('request body errors', () => {
   it('returns 400 INVALID_JSON for a malformed JSON body', async () => {
     const res = await request(app)
-      .post('/api/anything')
+      .post('/api/auth/login')
       .set('Content-Type', 'application/json')
       .send('{"username": ');
 
@@ -48,7 +42,7 @@ describe('error handling', () => {
 
   it('returns 413 PAYLOAD_TOO_LARGE for a body over 10kb', async () => {
     const res = await request(app)
-      .post('/api/anything')
+      .post('/api/auth/login')
       .set('Content-Type', 'application/json')
       .send(JSON.stringify({ padding: 'x'.repeat(11 * 1024) }));
 

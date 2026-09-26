@@ -2,7 +2,9 @@ import express, { type Express } from 'express';
 import helmet from 'helmet';
 import type { Config } from './config/env.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
+import { createApiRouter } from './routes/api.routes.js';
 import { healthRouter } from './routes/health.routes.js';
+import { createAuthService } from './services/auth.service.js';
 
 /**
  * Builds the Express app without starting a server, so integration tests can
@@ -24,7 +26,11 @@ export function createApp(config: Config): Express {
 
   app.use(healthRouter);
 
-  // Any /api path not matched above gets a JSON 404.
+  // Services are created per app instance, so tests never share state.
+  const authService = createAuthService(config);
+  app.use('/api', createApiRouter({ authService }));
+
+  // Any /api path not matched above (and past requireAuth) gets a JSON 404.
   app.use('/api', notFound);
   // Must be registered last so it receives errors from everything above.
   app.use(errorHandler);

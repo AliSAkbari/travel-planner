@@ -9,8 +9,8 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      // server.ts only wires config to listen(); all logic lives in tested modules.
-      exclude: ['src/server.ts'],
+      // server.ts only wires config to listen(); .d.ts files contain types, not runtime code.
+      exclude: ['src/server.ts', 'src/**/*.d.ts'],
       // skipFull: false lists every file, including 100%-covered ones. Set explicitly because
       // Vitest defaults it to true when it detects it is running under an AI coding agent.
       reporter: [['text', { skipFull: false }], 'html', 'lcov'],
