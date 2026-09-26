@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.angular/
+
+# Test output
+coverage/
+playwright-report/
+test-results/
+
+# Environment files: secrets never enter the repo; only the template is committed
+.env
+.env.*
+!.env.example
+
+# Claude Code local settings
+.claude/
+
+# Logs and OS/editor noise
+*.log
+.DS_Store
+Thumbs.db
