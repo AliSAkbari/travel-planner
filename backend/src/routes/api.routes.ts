@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { createAuthController, loginBodySchema } from '../controllers/auth.controller.js';
+import { createDiagnosticsController } from '../controllers/diagnostics.controller.js';
 import { createLoginRateLimiter } from '../middleware/loginRateLimit.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { validateBody } from '../middleware/validate.js';
@@ -7,6 +8,9 @@ import type { AuthService } from '../services/auth.service.js';
 
 export interface ApiDependencies {
   authService: AuthService;
+  /** Temporary: registers GET /api/diagnostics/network. */
+  enableDiagnostics: boolean;
+  trustProxyHops: number;
 }
 
 /**
@@ -14,7 +18,11 @@ export interface ApiDependencies {
  * `router.use(requireAuth(...))` requires a valid bearer token. Protected is
  * the default, so a newly added route can't be left open by accident.
  */
-export function createApiRouter({ authService }: ApiDependencies): Router {
+export function createApiRouter({
+  authService,
+  enableDiagnostics,
+  trustProxyHops,
+}: ApiDependencies): Router {
   const router = Router();
   const auth = createAuthController(authService);
 
@@ -28,6 +36,11 @@ export function createApiRouter({ authService }: ApiDependencies): Router {
   router.use(requireAuth(authService));
 
   router.get('/auth/me', auth.me);
+
+  // TEMPORARY: hosting verification; see diagnostics.controller.ts.
+  if (enableDiagnostics) {
+    router.get('/diagnostics/network', createDiagnosticsController(trustProxyHops).network);
+  }
 
   return router;
 }
