@@ -1,0 +1,16 @@
+{
+  "name": "travel-planner",
+  "private": true,
+  "description": "Travel planner: Angular frontend + Express/TypeScript backend",
+  "engines": {
+    "node": ">=22.12.0 <23"
+  },
+  "scripts": {
+    "install:all": "npm --prefix backend ci",
+    "build": "npm --prefix backend run build",
+    "start": "npm --prefix backend start",
+    "test": "npm --prefix backend test",
+    "lint": "npm --prefix backend run lint",
+    "typecheck": "npm --prefix backend run typecheck"
+  }
+}
