@@ -104,11 +104,14 @@ Services depend on clients, never on Express. This lets services be unit tested 
 | Code | Meaning |
 |---|---|
 | 400 | Invalid input (request body, params, or query) |
-| 401 | Missing, malformed, invalid, or expired token (sent with `WWW-Authenticate: Bearer`) |
-| 404 | Unknown city id |
+| 401 | Wrong credentials, or a missing, malformed, invalid, or expired token. Always sent with `WWW-Authenticate: Bearer` |
+| 404 | Unknown city id, or unknown `/api` route (only reachable with a valid token) |
+| 413 | Request body over 10 kb |
 | 429 | Login rate limit exceeded |
 | 502 | An upstream API failed or timed out. Every outbound call has a 5-second timeout |
 | 500 | Unexpected error. No stack traces in production |
+
+**401 error codes.** `INVALID_CREDENTIALS` (login), `MISSING_TOKEN`, `INVALID_TOKEN`, and `TOKEN_EXPIRED`. The frontend can tell an expired session apart from a bad login.
 
 **Why there is no 403.** 403 means an authenticated caller is not permitted. The app has a single role, so no endpoint has a legitimate 403 case.
 
@@ -118,6 +121,7 @@ Services depend on clients, never on Express. This lets services be unit tested 
 |---|---|---|---|---|
 | GET | `/healthz` | None | `200 { status: "ok" }` | — |
 | POST | `/api/auth/login` | None | `200 { token, expiresIn, user: { username } }` | 400, 401, 429 |
+| GET | `/api/auth/me` | Bearer | `200 { username }` | 401 |
 | GET | `/api/cities` | Bearer | `200 [{ id, name, country }]` | 401 |
 | GET | `/api/location` | Bearer | `200 { detected, cityId, match, distanceKm }` (see §5.3) | 401 |
 | GET | `/api/cities/:id/summary` | Bearer | `200 { title, description, extract, thumbnailUrl, wikiUrl }` | 401, 404, 502 |
@@ -133,6 +137,9 @@ Services depend on clients, never on Express. This lets services be unit tested 
   - Render's health checker cannot send a token.
   - It returns no application data.
   - It is the only unauthenticated route besides login.
+- **Protected by default.** The API router registers login, then `router.use(requireAuth)`, then every other route. A new route is protected unless it is deliberately placed above that line.
+  - Unknown `/api` paths also pass through `requireAuth`, so they return 401 without a token and 404 with one. Unauthenticated callers cannot probe which routes exist.
+- **`/api/auth/me`** returns the token's user. The frontend can use it to confirm a stored session is still valid.
 - **Current weather and the week share one endpoint.** Open-Meteo returns both in a single response, so this means one upstream call, one cache entry, and one round trip.
 - **Data endpoints take a city `id`, never raw coordinates.**
   - Validation is a lookup: an unknown id returns 404.
@@ -235,13 +242,20 @@ ipapi.co may rate-limit requests coming from shared cloud IP ranges. This is che
   - A `hash-password` script generates the bcrypt hash.
   - The plaintext password is never committed. Reviewers receive credentials with the submission email.
 - **Hashing: bcryptjs** (pure JavaScript). The native `bcrypt` package needs node-gyp builds, which are fragile on Windows and on some hosts. The speed difference is irrelevant for one user.
-- **No username enumeration by timing.** `bcrypt.compare` runs even when the username is wrong, so response time does not reveal whether a username exists.
-- **Rate limit.** Login is limited to 5 attempts per 15 minutes per IP (express-rate-limit).
+- **No username enumeration.**
+  - A wrong username and a wrong password return the identical 401 response.
+  - For an unknown username, `bcrypt.compare` still runs, against a dummy hash precomputed at startup with the same cost factor as the real hash. Both paths do the same work, so response time does not reveal whether a username exists (measured locally: 289 ms vs 263 ms at cost 12).
+- **Password length.** Limited to 72 bytes, because bcrypt ignores anything longer. Checked in bytes, not characters: `é` is 2 bytes in UTF-8.
+- **Rate limit.** Login is limited to 5 failed attempts per 15 minutes per IP (express-rate-limit).
+  - Successful logins are not counted, so a legitimate user is never locked out.
+  - The limiter runs before validation, so malformed requests count as failed attempts too.
+  - It is created inside `createApp`, so each app instance (and each test) has its own counters.
 
 **Token**
 
 - **Format.** `jsonwebtoken`, HS256, signed with `JWT_SECRET`. Startup fails if the secret is shorter than 32 characters.
-- **Claims.** `sub`, `iat`, and `exp`, with a 1-hour expiry.
+- **Claims.** `sub`, `iat`, and `exp`. Lifetime is `JWT_EXPIRES_IN_SECONDS` (default 3600). Seconds are used rather than strings like `1h`, so zod can validate the value strictly, and the login response returns the same number as `expiresIn`.
+- **Subject check.** After the signature is verified, `sub` must equal `DEMO_USERNAME`. Changing the username invalidates existing tokens.
 - **Algorithm pinning.** Verification pins `algorithms: ['HS256']`, which rejects `alg: none` and algorithm-confusion tokens.
 
 **Browser storage: sessionStorage**
@@ -367,15 +381,17 @@ External responses are cached in a small in-memory `TtlCache`: a `Map` plus expi
 | `NODE_ENV` | `production` on Render |
 | `PORT` | Set by Render |
 | `JWT_SECRET` | HS256 signing secret, ≥ 32 characters |
-| `JWT_EXPIRES_IN` | Token lifetime (default `1h`) |
+| `JWT_EXPIRES_IN_SECONDS` | Token lifetime in seconds (default `3600`) |
 | `DEMO_USERNAME` | Demo user's username |
 | `DEMO_PASSWORD_HASH` | bcrypt hash of the demo password |
 | `TRUST_PROXY_HOPS` | Number of trusted reverse-proxy hops (verified on deploy) |
+| `ENABLE_DIAGNOSTICS` | Temporary. `true` registers `GET /api/diagnostics/network` (token required) for verifying the hosting setup |
 
 ## 8. Known limitations
 
 - **Cold starts.** Render's free tier spins instances down after about 15 minutes idle. The first request afterwards can take tens of seconds, and the in-memory cache is lost.
 - **Cache scope.** The cache is per-instance and does not deduplicate concurrent requests for the same key.
+- **Rate-limit scope.** Login rate-limit counters are in memory: per instance, and reset on restart or spin-down.
 - **No refresh tokens.** Users log in again after the token expires.
 - **A single hard-coded demo user.** There is no user store.
 - **IP geolocation accuracy.** It is approximate, and VPNs and mobile carriers can place users far away.
