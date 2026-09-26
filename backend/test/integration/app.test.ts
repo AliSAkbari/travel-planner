@@ -1,10 +1,9 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
-import type { Config } from '../../src/config/env.js';
+import { makeTestConfig } from '../helpers/testConfig.js';
 
-const testConfig: Config = { nodeEnv: 'test', port: 0, trustProxyHops: 0 };
-const app = createApp(testConfig);
+const app = createApp(makeTestConfig());
 
 describe('GET /healthz', () => {
   it('returns 200 with status ok', async () => {
