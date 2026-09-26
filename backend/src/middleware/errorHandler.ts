@@ -78,6 +78,8 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
   const { status, body } = toErrorResponse(err);
   // Log only server-side failures; 4xx responses are the client's mistake, not ours.
   if (status >= 500) console.error(err);
+  // HTTP requires a 401 to name the auth scheme the client should use (RFC 7235).
+  if (status === 401) res.set('WWW-Authenticate', 'Bearer');
   res.status(status).json(body);
 };
 

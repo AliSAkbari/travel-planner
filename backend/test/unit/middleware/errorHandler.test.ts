@@ -59,7 +59,7 @@ describe('toErrorResponse', () => {
 
 describe('errorHandler', () => {
   function mockResponse(headersSent = false) {
-    const res = { headersSent, status: vi.fn(), json: vi.fn() };
+    const res = { headersSent, status: vi.fn(), json: vi.fn(), set: vi.fn() };
     res.status.mockReturnValue(res); // allow res.status(...).json(...) chaining
     return res;
   }
@@ -74,6 +74,26 @@ describe('errorHandler', () => {
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: { code: 'NOT_FOUND', message: 'Nope' } });
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('adds WWW-Authenticate: Bearer to 401 responses only', () => {
+    const unauthorized = mockResponse();
+    errorHandler(
+      new HttpError(401, 'INVALID_TOKEN', 'x'),
+      req,
+      unauthorized as unknown as Response,
+      vi.fn(),
+    );
+    expect(unauthorized.set).toHaveBeenCalledWith('WWW-Authenticate', 'Bearer');
+
+    const notFoundRes = mockResponse();
+    errorHandler(
+      new HttpError(404, 'NOT_FOUND', 'x'),
+      req,
+      notFoundRes as unknown as Response,
+      vi.fn(),
+    );
+    expect(notFoundRes.set).not.toHaveBeenCalled();
   });
 
   it('logs 500s server-side', () => {
