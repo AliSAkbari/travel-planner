@@ -6,7 +6,7 @@ import { createApp } from './app.js';
 import { loadConfig } from './config/env.js';
 
 // Production entry point: the Express app as a 2nd-gen Firebase HTTPS function.
-// Firebase Hosting rewrites /api/** and /healthz here (see firebase.json).
+// Firebase Hosting rewrites /api/** and /health here (see firebase.json).
 // Like server.ts, it only wires config to the app, so it is excluded from
 // unit-test coverage and verified with the Firebase emulators instead.
 

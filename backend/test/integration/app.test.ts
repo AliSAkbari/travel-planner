@@ -5,9 +5,9 @@ import { makeTestConfig } from '../helpers/testConfig.js';
 
 const app = createApp(makeTestConfig());
 
-describe('GET /healthz', () => {
+describe('GET /health', () => {
   it('returns 200 with status ok', async () => {
-    const res = await request(app).get('/healthz');
+    const res = await request(app).get('/health');
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/application\/json/);
@@ -15,7 +15,7 @@ describe('GET /healthz', () => {
   });
 
   it('sets helmet security headers and hides X-Powered-By', async () => {
-    const res = await request(app).get('/healthz');
+    const res = await request(app).get('/health');
 
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.headers['content-security-policy']).toBeDefined();
@@ -23,12 +23,12 @@ describe('GET /healthz', () => {
   });
 
   it('is not marked no-store (only /api responses are)', async () => {
-    const res = await request(app).get('/healthz');
+    const res = await request(app).get('/health');
     expect(res.headers['cache-control']).toBeUndefined();
   });
 
   it('does not require authentication', async () => {
-    const res = await request(app).get('/healthz');
+    const res = await request(app).get('/health');
     expect(res.status).not.toBe(401);
   });
 });

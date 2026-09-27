@@ -32,7 +32,7 @@ Browser (Angular SPA)
    ▼
 Firebase Hosting (CDN)
    ├─ static file exists?  → Angular build (index.html, JS, CSS)
-   ├─ /api/**, /healthz    → rewrite → 2nd-gen HTTPS function "api" (us-west1)
+   ├─ /api/**, /health     → rewrite → 2nd-gen HTTPS function "api" (us-west1)
    │                                      └─ Express: createApp(config)
    │                                           routes → controllers → services → clients
    │                                                                              ├─▶ Open-Meteo  (weather)
@@ -133,7 +133,7 @@ Services depend on clients, never on Express. This lets services be unit tested 
 
 | Method | Path | Auth | Success response | Errors |
 |---|---|---|---|---|
-| GET | `/healthz` | None | `200 { status: "ok" }` | — |
+| GET | `/health` | None | `200 { status: "ok" }` | — |
 | POST | `/api/auth/login` | None | `200 { token, expiresIn, user: { username } }` | 400, 401, 429 |
 | GET | `/api/auth/me` | Bearer | `200 { username }` | 401 |
 | GET | `/api/cities` | Bearer | `200 [{ id, name, country }]` | 401 |
@@ -147,7 +147,7 @@ Services depend on clients, never on Express. This lets services be unit tested 
 
 **Design notes**
 
-- **`/healthz` is intentionally public and outside `/api`.**
+- **`/health` is intentionally public and outside `/api`.**
   - It is for uptime checks and warming the function, which cannot send a token.
   - It returns no application data.
   - It is the only unauthenticated route besides login.
@@ -359,7 +359,7 @@ The hosting target changed from Render to Firebase before the first deploy.
 **Serving**
 
 - **Hosting serves the Angular build and the SPA fallback.** Express no longer serves static files or `index.html`.
-- **Rewrites.** `/api/**` and `/healthz` go to the function, so the whole app is on one origin with no CORS configuration.
+- **Rewrites.** `/api/**` and `/health` go to the function, so the whole app is on one origin with no CORS configuration.
 
 **The function (`backend/src/function.ts`)**
 
@@ -390,10 +390,15 @@ The hosting target changed from Render to Firebase before the first deploy.
 - **`req.ip` is `undefined`.** The emulator connects to the function over a pipe and adds no `X-Forwarded-For`. This crashed the login rate limiter; it now falls back to a shared `unknown-ip` bucket (§5.4).
 - **The body is parsed by the framework first.** See §5.8.
 
+**Found on the first real deploy** (not reproducible in the emulator):
+- **`/healthz` never reached the app.** Cloud Run reserves "some paths ending with `z`" and recommends avoiding them all, so Google's front end answered it with its own 404, even on the direct URL. The endpoint was renamed to `/health`.
+- **A too-short `JWT_SECRET` was caught at startup.** The value had been truncated when pasted into the CLI's hidden prompt. `loadConfig` rejected it inside `onInit` and logged the variable name only, never the value. The secret was re-set by piping a generated value straight into `firebase functions:secrets:set --data-file -`, so no clipboard was involved.
+- **The first deploy stopped before releasing Hosting.** In non-interactive mode, the CLI could not set up the container-image clean-up policy. It was set explicitly with `firebase functions:artifacts:setpolicy --location us-west1 --days 1`.
+
 ### 5.8 Hardening
 
 - **helmet.** Security headers on every response from Express.
-  - In production, Express only answers `/api/**` and `/healthz`. Hosting serves the Angular files itself, so the **page's** security headers, including the CSP that allows Wikimedia image hosts, must be set in `firebase.json` `headers` (frontend phase).
+  - In production, Express only answers `/api/**` and `/health`. Hosting serves the Angular files itself, so the **page's** security headers, including the CSP that allows Wikimedia image hosts, must be set in `firebase.json` `headers` (frontend phase).
 - **No caching of API responses.** Every `/api` response sends `Cache-Control: no-store`. Responses are per-user, and the login response contains a token, so neither the browser nor the CDN may store them.
 - **Login rate limiting.** See §5.4.
 - **Body size limit: local only.** `express.json({ limit: '10kb' })` applies on the local server.
