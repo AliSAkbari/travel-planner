@@ -1,10 +1,16 @@
 import express, { type Express } from 'express';
 import helmet from 'helmet';
+import { createIp2LocationLookup } from './clients/ip2location.client.js';
+import { fetchForecast } from './clients/openMeteo.client.js';
+import { fetchSummary } from './clients/wikipedia.client.js';
 import type { Config } from './config/env.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { createApiRouter } from './routes/api.routes.js';
 import { healthRouter } from './routes/health.routes.js';
 import { createAuthService } from './services/auth.service.js';
+import { createCityService } from './services/city.service.js';
+import { createLocationService } from './services/location.service.js';
+import { createWeatherService } from './services/weather.service.js';
 
 /**
  * Builds the Express app without starting a server, so integration tests can
@@ -33,9 +39,21 @@ export function createApp(config: Config): Express {
     next();
   });
 
-  // Services are created per app instance, so tests never share state.
-  const authService = createAuthService(config);
-  app.use('/api', createApiRouter({ authService }));
+  // Composition root: services are created per app instance (so tests never
+  // share caches or counters) and receive their API clients as plain functions,
+  // which unit tests replace with fakes.
+  app.use(
+    '/api',
+    createApiRouter({
+      authService: createAuthService(config),
+      cityService: createCityService({ fetchSummary }),
+      weatherService: createWeatherService({ fetchForecast }),
+      locationService: createLocationService({
+        lookupIp: createIp2LocationLookup(config.ip2locationApiKey),
+        isProduction: config.nodeEnv === 'production',
+      }),
+    }),
+  );
 
   // Any /api path not matched above (and past requireAuth) gets a JSON 404.
   app.use('/api', notFound);
