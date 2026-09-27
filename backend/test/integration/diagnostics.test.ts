@@ -12,10 +12,11 @@ async function appWithToken(overrides: Partial<Config>) {
   return { app, auth: `Bearer ${res.body.token as string}` };
 }
 
-function mockIpapi(body: object, status = 200) {
+/** Every provider call gets the same answer. A fresh Response per call: a body can only be read once. */
+function mockGeo(body: object, status = 200) {
   return vi
     .spyOn(globalThis, 'fetch')
-    .mockResolvedValue(new Response(JSON.stringify(body), { status }));
+    .mockImplementation(() => Promise.resolve(new Response(JSON.stringify(body), { status })));
 }
 
 describe('GET /api/diagnostics/network', () => {
@@ -32,7 +33,7 @@ describe('GET /api/diagnostics/network', () => {
   });
 
   it('with 0 trusted hops, ignores X-Forwarded-For and uses the socket address', async () => {
-    mockIpapi({ city: 'Somewhere' });
+    mockGeo({ city: 'Somewhere' });
     const { app, auth } = await appWithToken({ enableDiagnostics: true, trustProxyHops: 0 });
 
     const res = await request(app)
@@ -45,7 +46,7 @@ describe('GET /api/diagnostics/network', () => {
   });
 
   it('with 1 trusted hop, takes the rightmost X-Forwarded-For entry (client-written entries on the left are ignored)', async () => {
-    mockIpapi({ city: 'Calgary' });
+    mockGeo({ city: 'Calgary' });
     const { app, auth } = await appWithToken({ enableDiagnostics: true, trustProxyHops: 1 });
 
     // "6.6.6.6" is what a spoofing client wrote; "203.0.113.9" is what our proxy appended.
@@ -57,8 +58,8 @@ describe('GET /api/diagnostics/network', () => {
     expect(res.body.reqIp).toBe('203.0.113.9');
   });
 
-  it('reports the ipapi.co status and body for req.ip', async () => {
-    const fetchSpy = mockIpapi({ city: 'Calgary', region_code: 'AB' });
+  it('asks every candidate provider about req.ip and reports each result', async () => {
+    const fetchSpy = mockGeo({ city: 'Calgary' });
     const { app, auth } = await appWithToken({ enableDiagnostics: true, trustProxyHops: 1 });
 
     const res = await request(app)
@@ -70,18 +71,20 @@ describe('GET /api/diagnostics/network', () => {
       'https://ipapi.co/203.0.113.9/json/',
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(res.body.ipapi).toMatchObject({ status: 200, durationMs: expect.any(Number) });
-    expect(JSON.parse(res.body.ipapi.body)).toEqual({ city: 'Calgary', region_code: 'AB' });
+    expect(fetchSpy).toHaveBeenCalledWith('https://ipwho.is/203.0.113.9', expect.anything());
+    expect(Object.keys(res.body.geo)).toHaveLength(fetchSpy.mock.calls.length);
+    expect(res.body.geo['ipwho.is']).toMatchObject({ status: 200, durationMs: expect.any(Number) });
+    expect(JSON.parse(res.body.geo['ipwho.is'].body)).toEqual({ city: 'Calgary' });
   });
 
-  it('reports ipapi.co rate limiting instead of failing', async () => {
-    mockIpapi({ error: true, reason: 'RateLimited' }, 429);
+  it('reports provider rate limiting instead of failing', async () => {
+    mockGeo({ error: true, reason: 'RateLimited' }, 429);
     const { app, auth } = await appWithToken({ enableDiagnostics: true });
 
     const res = await request(app).get('/api/diagnostics/network').set('Authorization', auth);
 
     expect(res.status).toBe(200);
-    expect(res.body.ipapi.status).toBe(429);
+    expect(res.body.geo['ipapi.co'].status).toBe(429);
   });
 
   it('reports network errors instead of failing', async () => {
@@ -91,11 +94,11 @@ describe('GET /api/diagnostics/network', () => {
     const res = await request(app).get('/api/diagnostics/network').set('Authorization', auth);
 
     expect(res.status).toBe(200);
-    expect(res.body.ipapi).toEqual({ error: 'getaddrinfo ENOTFOUND' });
+    expect(res.body.geo['ipapi.co']).toEqual({ error: 'getaddrinfo ENOTFOUND' });
   });
 
   it('does not echo non-proxy headers such as Authorization', async () => {
-    mockIpapi({});
+    mockGeo({});
     const { app, auth } = await appWithToken({ enableDiagnostics: true });
 
     const res = await request(app).get('/api/diagnostics/network').set('Authorization', auth);
