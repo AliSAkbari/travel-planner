@@ -5,9 +5,9 @@ import { makeTestConfig } from '../helpers/testConfig.js';
 
 const app = createApp(makeTestConfig());
 
-describe('GET /healthz', () => {
+describe('GET /health', () => {
   it('returns 200 with status ok', async () => {
-    const res = await request(app).get('/healthz');
+    const res = await request(app).get('/health');
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/application\/json/);
@@ -15,15 +15,20 @@ describe('GET /healthz', () => {
   });
 
   it('sets helmet security headers and hides X-Powered-By', async () => {
-    const res = await request(app).get('/healthz');
+    const res = await request(app).get('/health');
 
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.headers['content-security-policy']).toBeDefined();
     expect(res.headers['x-powered-by']).toBeUndefined();
   });
 
+  it('is not marked no-store (only /api responses are)', async () => {
+    const res = await request(app).get('/health');
+    expect(res.headers['cache-control']).toBeUndefined();
+  });
+
   it('does not require authentication', async () => {
-    const res = await request(app).get('/healthz');
+    const res = await request(app).get('/health');
     expect(res.status).not.toBe(401);
   });
 });
@@ -48,5 +53,15 @@ describe('request body errors', () => {
 
     expect(res.status).toBe(413);
     expect(res.body.error.code).toBe('PAYLOAD_TOO_LARGE');
+  });
+});
+
+describe('/api caching', () => {
+  it('marks every /api response Cache-Control: no-store, including errors', async () => {
+    const login = await request(app).post('/api/auth/login').send({});
+    const unauthorized = await request(app).get('/api/auth/me');
+
+    expect(login.headers['cache-control']).toBe('no-store');
+    expect(unauthorized.headers['cache-control']).toBe('no-store');
   });
 });

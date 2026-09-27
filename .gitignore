@@ -10,10 +10,18 @@ coverage/
 playwright-report/
 test-results/
 
-# Environment files: secrets never enter the repo; only the template is committed
+# Environment files: real values never enter the repo; only *.example templates are committed.
+# local.env        -> backend dev server (npm run dev)
+# .env.<projectId> -> non-secret settings deployed with the Firebase function
+# .env.local       -> Firebase emulator overrides
+# .secret.local    -> Firebase emulator stand-ins for Secret Manager secrets
 .env
 .env.*
-!.env.example
+local.env
+.secret.local
+
+# Firebase CLI cache
+.firebase/
 
 # Claude Code local settings
 .claude/

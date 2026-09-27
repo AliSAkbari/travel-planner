@@ -19,7 +19,6 @@ describe('loadConfig', () => {
       trustProxyHops: 0,
       jwt: { secret: 'x'.repeat(32), expiresInSeconds: 3600 },
       demoUser: { username: 'demo', passwordHash: HASH },
-      enableDiagnostics: false,
     });
   });
 
@@ -30,14 +29,12 @@ describe('loadConfig', () => {
       PORT: '8080',
       TRUST_PROXY_HOPS: '1',
       JWT_EXPIRES_IN_SECONDS: '900',
-      ENABLE_DIAGNOSTICS: 'true',
     });
     expect(config).toMatchObject({
       nodeEnv: 'production',
       port: 8080,
       trustProxyHops: 1,
       jwt: { expiresInSeconds: 900 },
-      enableDiagnostics: true,
     });
   });
 
@@ -77,13 +74,6 @@ describe('loadConfig', () => {
   it('rejects a DEMO_PASSWORD_HASH that is not a bcrypt hash', () => {
     expect(() => loadConfig({ ...required, DEMO_PASSWORD_HASH: 'hunter2' })).toThrow(
       /DEMO_PASSWORD_HASH/,
-    );
-  });
-
-  it('treats ENABLE_DIAGNOSTICS="false" as false and rejects other strings', () => {
-    expect(loadConfig({ ...required, ENABLE_DIAGNOSTICS: 'false' }).enableDiagnostics).toBe(false);
-    expect(() => loadConfig({ ...required, ENABLE_DIAGNOSTICS: 'yes' })).toThrow(
-      /ENABLE_DIAGNOSTICS/,
     );
   });
 
