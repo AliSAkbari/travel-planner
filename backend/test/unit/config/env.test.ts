@@ -77,6 +77,24 @@ describe('loadConfig', () => {
     );
   });
 
+  it('treats IP2LOCATION_API_KEY as optional, with an empty value meaning unset', () => {
+    expect(loadConfig(required).ip2locationApiKey).toBeUndefined();
+    expect(loadConfig({ ...required, IP2LOCATION_API_KEY: '' }).ip2locationApiKey).toBeUndefined();
+    expect(
+      loadConfig({ ...required, IP2LOCATION_API_KEY: 'ABCDEF0123456789ABCDEF0123456789' })
+        .ip2locationApiKey,
+    ).toBe('ABCDEF0123456789ABCDEF0123456789');
+  });
+
+  it('rejects an IP2LOCATION_API_KEY that looks truncated or quoted', () => {
+    expect(() => loadConfig({ ...required, IP2LOCATION_API_KEY: 'ABC123' })).toThrow(
+      /IP2LOCATION_API_KEY/,
+    );
+    expect(() =>
+      loadConfig({ ...required, IP2LOCATION_API_KEY: '"ABCDEF0123456789ABCDEF"' }),
+    ).toThrow(/IP2LOCATION_API_KEY/);
+  });
+
   it('reports every invalid variable in one error', () => {
     expect(() => loadConfig({ ...required, PORT: 'abc', NODE_ENV: 'staging' })).toThrow(
       /NODE_ENV[\s\S]*PORT|PORT[\s\S]*NODE_ENV/,

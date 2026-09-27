@@ -13,6 +13,9 @@ import { loadConfig } from './config/env.js';
 // Stored in Google Secret Manager; set with `firebase functions:secrets:set <NAME>`.
 const jwtSecret = defineSecret('JWT_SECRET');
 const demoPasswordHash = defineSecret('DEMO_PASSWORD_HASH');
+// Optional for the app, but once bound here it must exist in Secret Manager or
+// the deploy fails. It gives ip2location.io a per-key quota (docs/ARCHITECTURE.md §5.3).
+const ip2locationApiKey = defineSecret('IP2LOCATION_API_KEY');
 
 let app: Express | undefined;
 
@@ -26,6 +29,7 @@ onInit(() => {
     ...process.env, // non-secret settings deployed from backend/.env.<projectId>
     JWT_SECRET: jwtSecret.value(),
     DEMO_PASSWORD_HASH: demoPasswordHash.value(),
+    IP2LOCATION_API_KEY: ip2locationApiKey.value(),
   };
   // PORT belongs to the platform (the emulator even sets it to a socket path),
   // and this function never calls listen(), so it isn't ours to validate.
@@ -42,7 +46,7 @@ export const api = onRequest(
     // public traffic to it, and our own JWT middleware does the authentication.
     invoker: 'public',
     // Only these functions get access to the secrets.
-    secrets: [jwtSecret, demoPasswordHash],
+    secrets: [jwtSecret, demoPasswordHash, ip2locationApiKey],
     // One instance caps cost if the app is flooded, and keeps a single set of
     // in-memory rate-limit counters and caches. It serves up to 80 requests at once.
     maxInstances: 1,

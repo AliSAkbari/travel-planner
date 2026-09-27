@@ -26,6 +26,20 @@ const envSchema = z.object({
       /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/,
       'must be a bcrypt hash (run: npm run hash-password)',
     ),
+
+  // Optional: without it ip2location.io works keyless (1,000/day per calling IP).
+  // An empty value counts as unset. When present it must look like a key
+  // (letters/digits, 16+ chars), so a truncated or quoted paste fails at startup.
+  IP2LOCATION_API_KEY: z
+    .string()
+    .optional()
+    .transform((value) => value || undefined)
+    .pipe(
+      z
+        .string()
+        .regex(/^[A-Za-z0-9]{16,}$/, 'must be 16+ letters/digits (an ip2location.io API key)')
+        .optional(),
+    ),
 });
 
 /** Validated, typed application configuration. */
@@ -35,6 +49,8 @@ export interface Config {
   readonly trustProxyHops: number;
   readonly jwt: { readonly secret: string; readonly expiresInSeconds: number };
   readonly demoUser: { readonly username: string; readonly passwordHash: string };
+  /** Undefined means ip2location.io is called keyless. */
+  readonly ip2locationApiKey: string | undefined;
 }
 
 /**
@@ -58,5 +74,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     trustProxyHops: e.TRUST_PROXY_HOPS,
     jwt: { secret: e.JWT_SECRET, expiresInSeconds: e.JWT_EXPIRES_IN_SECONDS },
     demoUser: { username: e.DEMO_USERNAME, passwordHash: e.DEMO_PASSWORD_HASH },
+    ip2locationApiKey: e.IP2LOCATION_API_KEY,
   };
 }
