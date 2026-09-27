@@ -26,6 +26,13 @@ export function createApp(config: Config): Express {
 
   app.use(healthRouter);
 
+  // API responses are per-user (and the login response contains a token), so
+  // neither the browser nor the Hosting CDN may store them.
+  app.use('/api', (_req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    next();
+  });
+
   // Services are created per app instance, so tests never share state.
   const authService = createAuthService(config);
   app.use(

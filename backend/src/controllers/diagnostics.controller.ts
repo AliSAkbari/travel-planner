@@ -1,9 +1,11 @@
 import type { Request, RequestHandler } from 'express';
 
 // TEMPORARY: used once on the first deploy to verify the hosting setup, then
-// removed. Answers two questions (docs/ARCHITECTURE.md §9):
+// removed. Answers these questions (docs/ARCHITECTURE.md §9):
 //   1. How many proxy hops sit in front of the app? (sets TRUST_PROXY_HOPS)
 //   2. Does ipapi.co answer requests from the host's outbound IPs?
+//   3. How does the proxy chain differ when the function's own run.app URL
+//      is called directly, bypassing Firebase Hosting?
 // Only registered when ENABLE_DIAGNOSTICS=true, and still requires a token.
 
 /** Proxy-related headers worth seeing. An allowlist, so e.g. Authorization is never echoed. */
@@ -15,6 +17,8 @@ const PROXY_HEADERS = [
   'via',
   'cf-connecting-ip',
   'true-client-ip',
+  'fastly-client-ip',
+  'x-forwarded-host',
 ] as const;
 
 /** Calls ipapi.co for the given IP and reports what came back, including failures. */
