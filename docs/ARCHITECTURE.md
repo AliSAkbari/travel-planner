@@ -137,13 +137,14 @@ Services depend on clients, never on Express. This lets services be unit tested 
 | POST | `/api/auth/login` | None | `200 { token, expiresIn, user: { username } }` | 400, 401, 429 |
 | GET | `/api/auth/me` | Bearer | `200 { username }` | 401 |
 | GET | `/api/cities` | Bearer | `200 [{ id, name, country }]` | 401 |
-| GET | `/api/location` | Bearer | `200 { detected, cityId, match, distanceKm }` (see §5.3) | 401 |
-| GET | `/api/cities/:id/summary` | Bearer | `200 { title, description, extract, thumbnailUrl, wikiUrl }` | 401, 404, 502 |
-| GET | `/api/cities/:id/weather` | Bearer | `200 { timezone, current, daily[7] }` | 401, 404, 502 |
-| GET | `/api/cities/:id/forecast?date=YYYY-MM-DD` | Bearer | `200` one day's forecast *(optional feature)* | 400, 401, 404, 502 |
+| GET | `/api/location` | Bearer | `200 { detected, cityId, match, distanceKm }` (see §5.3). Always 200: failures fall back to Calgary | 401 |
+| GET | `/api/cities/:id/summary` | Bearer | `200 { cityId, title, description, extract, thumbnailUrl, wikiUrl }` | 401, 404, 502 |
+| GET | `/api/cities/:id/weather` | Bearer | `200 { cityId, timezone, current, daily[7] }` | 401, 404, 502 |
 
-- **`current`** contains temperature, feels-like, humidity, wind, weather code, label, icon, and day/night.
-- **`daily`** entries contain date, min, max, weather code, label, and precipitation probability.
+- **`current`:** `time`, `temperatureC`, `feelsLikeC`, `humidityPercent`, `windKmh`, `isDay`, `condition`, `label`.
+- **`daily`** (today + 6 days): `date`, `minC`, `maxC`, `precipitationChancePercent` (may be `null`), `condition`, `label`.
+- **Dates and times are the city's local ones** (`timezone=auto` upstream). For example, Tokyo's forecast starts on Tokyo's date.
+- **Units are in the field names**, so the frontend never guesses what a number means.
 
 **Design notes**
 
@@ -158,8 +159,10 @@ Services depend on clients, never on Express. This lets services be unit tested 
 - **Data endpoints take a city `id`, never raw coordinates.**
   - Validation is a lookup: an unknown id returns 404.
   - Cache keys are bounded by the city list, so callers cannot grow the cache with arbitrary inputs.
-- **The backend translates weather codes.** It maps WMO weather codes to labels and icons. This is business logic, so it lives in a unit-tested service; the frontend only renders.
-- **Forecast dates are checked in the city's timezone.** The optional forecast endpoint accepts dates from today to today + 5 days, where "today" is the city's local date.
+- **The backend translates weather codes.** It maps WMO weather codes (from Open-Meteo's documentation) to a `condition` (`clear`, `partly-cloudy`, `cloudy`, `fog`, `drizzle`, `rain`, `snow`, `thunderstorm`, `unknown`) and a human-readable `label`. This is business logic, so it lives in a unit-tested service.
+  - The frontend maps `condition` to an icon, so the icon set can change without an API change.
+  - Unknown codes degrade to `unknown` rather than failing.
+- **Optional date forecast (not built unless time allows, §10).** It would accept dates from today to today + 5 days, where "today" is the city's local date.
 
 ## 5. Key decisions
 
@@ -244,24 +247,26 @@ So the temporary diagnostics endpoint asked seven keyless providers about the sa
 
 | Situation | Result | UI message |
 |---|---|---|
-| A listed city is within 150 km (haversine) | Select the nearest listed city | "Detected: Airdrie, AB — showing nearest: Calgary (28 km)" |
-| No listed city within 150 km | Select **Calgary** (default) | "Detected: Lisbon, PT — no listed city nearby, showing default: Calgary" |
+| A listed city is within 150 km (haversine) | Select the nearest listed city | "Detected: Airdrie, Alberta — showing nearest: Calgary (27 km)" |
+| No listed city within 150 km | Select **Calgary** (default) | "Detected: Lisbon — no listed city nearby, showing default: Calgary" |
 | Lookup failed or IP is private in production | Select **Calgary** | "Couldn't detect your location — showing default: Calgary" |
 
 `GET /api/location` response shape:
 
 ```json
 {
-  "detected": { "city": "Airdrie", "region": "Alberta", "regionCode": "AB", "country": "CA", "lat": 51.29, "lon": -114.01 },
+  "detected": { "city": "Airdrie", "region": "Alberta", "country": "CA", "lat": 51.29, "lon": -114.01 },
   "cityId": "calgary",
   "match": "nearest",
-  "distanceKm": 28
+  "distanceKm": 27
 }
 ```
 
 - `match` is `"nearest"` or `"default"`.
 - `detected` is `null` when the lookup fails.
 - `distanceKm` is `null` when `match` is `"default"`.
+- `region` is the full region name ("Alberta"). ip2location.io returns no short region code, so the UI shows the full name.
+- **Private IPs.** ip2location.io answers 200 with every field `null`, which the client turns into `detected: null`. Outside production, a private `req.ip` makes the app call the provider with **no** `ip` parameter, so it locates the machine's own public IP (verified against the live API).
 
 **Why this design**
 
@@ -512,5 +517,5 @@ All of these are gitignored.
 ## 10. Planned extras (time permitting)
 
 - **CI.** A GitHub Actions workflow that runs typecheck, lint, and tests on every push.
-- **Date forecast.** The optional forecast endpoint for a chosen date (§4).
+- **Date forecast.** `GET /api/cities/:id/forecast?date=YYYY-MM-DD`, for a date up to 5 days ahead in the city's timezone.
 - **End-to-end test.** One Playwright test: log in, then view a city.
