@@ -37,7 +37,7 @@ Firebase Hosting (CDN)
    │                                           routes → controllers → services → clients
    │                                                                              ├─▶ Open-Meteo  (weather)
    │                                                                              ├─▶ Wikipedia   (city summary)
-   │                                                                              └─▶ ipapi.co    (IP geolocation)
+   │                                                                              └─▶ ip2location.io (IP geolocation)
    └─ anything else        → /index.html (Angular router)
 ```
 
@@ -73,7 +73,7 @@ Services depend on clients, never on Express. This lets services be unit tested 
 │  │  ├─ routes/
 │  │  ├─ controllers/
 │  │  ├─ services/
-│  │  ├─ clients/       openMeteo, wikipedia, ipapi
+│  │  ├─ clients/       openMeteo, wikipedia, ip2location
 │  │  ├─ middleware/    requireAuth, validate, errorHandler, loginRateLimit
 │  │  └─ utils/         TtlCache, HttpError, haversine
 │  └─ test/
@@ -192,15 +192,27 @@ The brief asks for "the current week", which OpenWeatherMap's free tier cannot p
 
 ### 5.3 IP geolocation
 
-**Provider: ipapi.co**
+**Provider: ip2location.io** (chosen after testing candidates from the deployed function)
 
-| | ipapi.co | ip-api.com |
-|---|---|---|
-| HTTPS on free tier | Yes | No: returns 403 "SSL unavailable" |
-| Free limit | ~1,000 requests/day (per provider docs) | 45 requests/minute, non-commercial |
+The original choice, ipapi.co, returned **429 RateLimited** when called from the deployed function. Keyless quotas are counted per *client IP*, and the function's outbound address is a Google Cloud egress IP shared with other tenants.
 
-ip-api.com would send users' IP addresses over the internet in plaintext.
-ipapi.co may rate-limit requests coming from shared cloud IP ranges. This is checked on the skeleton deploy (§5.7), while there is still time to switch provider.
+So the temporary diagnostics endpoint asked seven keyless providers about the same real client IP, in parallel, from production, through both the Hosting and the direct URL:
+
+| Provider | Result from Google Cloud | HTTPS | Key | Free limit (provider docs) | Notes |
+|---|---|---|---|---|---|
+| ipapi.co | ❌ 429 RateLimited | ✅ | no | ~1,000/day per client IP | Rejected |
+| ip-api.com | ✅ correct city (Calgary) | ❌ HTTP only | no | 45/min per IP | Non-commercial; sends users' IPs in plaintext |
+| ipwho.is | ✅ correct city | ✅ | no | 1,000/day | Commercial use allowed |
+| **ip2location.io** | ✅ correct city | ✅ | optional | 1,000/day keyless; **50,000/month per free key** | Free plan requires visible attribution |
+| ipinfo.io (no token) | ✅ correct city | ✅ | no | 50k/month (legacy, "may be discontinued") | The free token tier (Lite) is country-only |
+| ipapi.is (anonymous) | ✅ correct city | ✅ | no | 30/day per client IP, then a 24 h block | |
+| geojs.io | ✅ correct city | ✅ | no | Not published | |
+
+**Why ip2location.io:** all six working providers were equally accurate, so the choice was made on **reliability**.
+- Only ip2location.io offers a free, city-level quota counted **per API key** (50,000/month) rather than per client IP. That makes it the one option that cannot be exhausted by other tenants sharing Google's egress IPs.
+- **The key is optional.** The client works keyless, and adds the key when `IP2LOCATION_API_KEY` is set (a Secret Manager secret in production).
+- **Attribution.** The free plan's required attribution line goes in the app footer.
+- **Failure handling.** Any provider failure (error, timeout, 429, private IP) falls back to the default city with a message; it never breaks the app.
 
 **Using the user's IP, not the server's**
 
@@ -210,10 +222,22 @@ ipapi.co may rate-limit requests coming from shared cloud IP ranges. This is che
 - **What spoofing would affect.**
   - The default city: harmless.
   - The login rate limiter, which is keyed on `req.ip`: this is why N must be correct.
-- **Configuration.** N comes from the `TRUST_PROXY_HOPS` environment variable. It is verified on the skeleton deploy rather than assumed.
+- **Configuration.** N comes from the `TRUST_PROXY_HOPS` environment variable. It is **2** in production, measured rather than assumed (below).
+
+**Measured on the deployed app** (temporary diagnostics endpoint, since removed):
+
+| | Through Firebase Hosting | Direct `run.app` URL |
+|---|---|---|
+| Socket peer | Google front end | Google front end |
+| `X-Forwarded-For` received | `<client>, <Hosting CDN>` | `<client>` (plus anything the caller sends) |
+| Spoof test: request sent with `X-Forwarded-For: 6.6.6.6` | Hosting **dropped** the forged value; `req.ip` = real client IP | `req.ip` = **`6.6.6.6`** |
+
+- **The hop count.** Express puts the socket peer first and then reads `X-Forwarded-For` right to left: `[front end, CDN, client]`. Trusting 2 hops makes `req.ip` the client.
+- **Trust-proxy precedence confirmed.** Google's Functions Framework enables `trust proxy` on its own Express app, but our app's setting governs `req.ip`.
+- **Regression tests** pin both rows of the spoof test (`test/integration/auth.test.ts`). With 2 trusted hops, prepending forged entries cannot dodge the login rate limit. The one-hop-shorter direct-URL shape lets a forged entry become `req.ip`.
 
 **Private and loopback addresses.** These are detected with Node's `net.BlockList`, after stripping any `::ffff:` IPv4-mapped prefix.
-- **Outside production:** the app asks ipapi.co to locate the machine's own public IP. On a developer laptop this is the developer's real location, so local development behaves realistically.
+- **Outside production:** the app asks the provider to locate the machine's own public IP. On a developer laptop this is the developer's real location, so local development behaves realistically.
 - **In production:** the app skips the lookup and uses the default city. Looking up the server's own IP would return the datacenter's location.
 
 **Matching the detected location to the city list**
@@ -314,7 +338,7 @@ External responses are cached in a small in-memory `TtlCache`: a `Map` plus expi
 **Benefits**
 
 - Lower latency.
-- Less exposure to upstream rate limits (notably ipapi.co's daily quota).
+- Less exposure to upstream rate limits (notably the geolocation provider's quota).
 
 ### 5.6 Frontend: state and UI
 
@@ -383,7 +407,7 @@ The hosting target changed from Render to Firebase before the first deploy.
 **Rollout: skeleton deploy after the auth phase.** Health and login are deployed before the external-API work. This verifies early, while there is still time to change course:
 - the proxy hop count (`TRUST_PROXY_HOPS`), through Hosting;
 - the same through the function's direct `run.app` URL (see §8);
-- that ipapi.co answers requests from Google's egress IPs.
+- that the geolocation provider answers requests from Google's egress IPs (ipapi.co did not; see §5.3).
 
 **Emulator testing.** The Hosting and Functions emulators were used before the first deploy. They surfaced three differences from a plain Node server:
 - **`PORT` is a socket path**, which `loadConfig` rejected. Fixed by dropping `PORT` in `function.ts`.
@@ -442,8 +466,8 @@ The hosting target changed from Render to Firebase before the first deploy.
 | `JWT_EXPIRES_IN_SECONDS` | Token lifetime in seconds (default `3600`) | `local.env` | `.env.<projectId>` |
 | `DEMO_USERNAME` | Demo user's username | `local.env` | `.env.<projectId>` |
 | `DEMO_PASSWORD_HASH` | bcrypt hash of the demo password | `local.env` | **Secret Manager** |
-| `TRUST_PROXY_HOPS` | Number of trusted reverse-proxy hops | `local.env` (`0`) | `.env.<projectId>` (measured on deploy) |
-| `ENABLE_DIAGNOSTICS` | Temporary. `true` registers `GET /api/diagnostics/network` (token required) | `local.env` | `.env.<projectId>` |
+| `TRUST_PROXY_HOPS` | Number of trusted reverse-proxy hops | `local.env` (`0`) | `.env.<projectId>` (`2`, measured) |
+| `IP2LOCATION_API_KEY` | Optional ip2location.io key: per-key quota instead of the keyless per-IP one | `local.env` (optional) | **Secret Manager** (optional) |
 
 **Files**
 
@@ -466,7 +490,8 @@ All of these are gitignored.
 - **Direct-URL bypass of Hosting.** The function also has its own public `run.app` URL.
   - A request sent there skips Hosting, so it passes through one fewer proxy.
   - `TRUST_PROXY_HOPS` is set for the Hosting path, so a caller using the direct URL can choose their own `req.ip` by adding one `X-Forwarded-For` entry. That weakens the per-IP login rate limit.
-  - Measured with the diagnostics endpoint and accepted for this demo. Fixes need paid Google Cloud load-balancer features, or depending on undocumented Hosting headers.
+  - **Measured:** a request to the `run.app` URL with `X-Forwarded-For: 6.6.6.6` produced `req.ip = 6.6.6.6`, while the same request through Hosting kept the real IP (§5.3). A regression test documents the bypass.
+  - **Accepted for this demo.** The exposure is limited to the login rate limit; authentication itself is unaffected. Fixes need paid Google Cloud load-balancer features, or depending on undocumented Hosting headers.
 - **Dependency advisory.** `npm audit` reports a moderate advisory in `uuid` (bounds check in its v3/v5/v6 functions when a caller passes a buffer). It comes in through `firebase-admin` → `@google-cloud/storage` → `gaxios`, which pins `uuid@^9`. The app never calls that code path; the package is only installed because `firebase-functions` requires `firebase-admin` as a peer.
 - **No refresh tokens.** Users log in again after the token expires.
 - **A single hard-coded demo user.** There is no user store.
@@ -474,14 +499,14 @@ All of these are gitignored.
 - **Fixed city list.** Locations outside the list map to the nearest listed city or to the default.
 - **Free-tier upstream terms.**
   - Open-Meteo is for non-commercial use only.
-  - ipapi.co has a daily request quota.
+  - ip2location.io allows 1,000 lookups/day keyless, or 50,000/month with a free key, and requires attribution on the free plan.
 
 ## 9. Open items to verify
 
-- **Proxy hops.** The hop count through Firebase Hosting, which sets `TRUST_PROXY_HOPS`. It cannot be measured in the emulator: there, the function has no socket address and receives no `X-Forwarded-For`. Checked on the skeleton deploy.
-- **Direct-URL hops.** The hop count through the function's `run.app` URL, to quantify the bypass in §8. Checked on the skeleton deploy.
-- **Trust-proxy precedence.** Google's Functions Framework enables `trust proxy` on its own Express app. Our app's setting is expected to govern `req.ip`, because Express switches each request to the app handling it. Confirmed by the spoofing test on the skeleton deploy.
-- **ipapi.co from Google Cloud.** Whether ipapi.co serves requests from Google's egress IPs without rate limiting. Checked on the skeleton deploy.
+- ~~**Proxy hops.**~~ **Resolved:** 2 through Hosting (§5.3).
+- ~~**Direct-URL hops.**~~ **Resolved:** one fewer; the bypass is measured and documented (§8).
+- ~~**Trust-proxy precedence.**~~ **Resolved:** our app's setting governs `req.ip`, confirmed by the spoof test.
+- ~~**ipapi.co from Google Cloud.**~~ **Resolved:** it returns 429, so the provider changed to ip2location.io (§5.3).
 - **CSP with Angular and Material.** Whether the production build works under helmet's CSP. Angular adds component styles at runtime, and its build can inline critical CSS. Material increases the number of runtime styles. Verified in the browser against the production build during the frontend phase, not assumed.
 
 ## 10. Planned extras (time permitting)
