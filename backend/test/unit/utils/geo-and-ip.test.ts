@@ -13,8 +13,8 @@ describe('distanceKm', () => {
     const edmonton = findCity('edmonton')!;
     // Calgary–Edmonton is about 280 km in a straight line.
     expect(distanceKm(calgary, edmonton)).toBeCloseTo(281, -1);
-    // Airdrie (51.2917, -114.0144) to central Calgary: about 28 km.
-    expect(distanceKm({ lat: 51.2917, lon: -114.0144 }, calgary)).toBeCloseTo(27.5, 0);
+    // Airdrie (51.2917, -114.0144) to central Calgary: about 27 km.
+    expect(distanceKm({ lat: 51.2917, lon: -114.0144 }, calgary)).toBeCloseTo(27.4, 1);
   });
 
   it('is symmetric', () => {
