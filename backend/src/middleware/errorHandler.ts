@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { ZodError } from 'zod';
+import { UpstreamError } from '../clients/http.js';
 import { HttpError } from '../utils/httpError.js';
 
 /** The single JSON error shape every endpoint returns. */
@@ -30,6 +31,20 @@ export function toErrorResponse(err: unknown): { status: number; body: ErrorBody
             path: issue.path.map(String).join('.'),
             message: issue.message,
           })),
+        },
+      },
+    };
+  }
+
+  // An external API failed. 502 Bad Gateway: we are fine, the service we depend on isn't.
+  // The details (provider, status) go to the server log, not to the client.
+  if (err instanceof UpstreamError) {
+    return {
+      status: 502,
+      body: {
+        error: {
+          code: 'UPSTREAM_UNAVAILABLE',
+          message: 'A data provider is unavailable. Please try again shortly.',
         },
       },
     };

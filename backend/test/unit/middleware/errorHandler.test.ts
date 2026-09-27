@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { errorHandler, notFound, toErrorResponse } from '../../../src/middleware/errorHandler.js';
+import { UpstreamError } from '../../../src/clients/http.js';
 import { HttpError } from '../../../src/utils/httpError.js';
 
 /** Builds an Error shaped like the ones body-parser (express.json) produces. */
@@ -30,6 +31,13 @@ describe('toErrorResponse', () => {
     expect(status).toBe(400);
     expect(body.error.code).toBe('VALIDATION_ERROR');
     expect(body.error.details).toEqual([{ path: 'username', message: expect.any(String) }]);
+  });
+
+  it('maps an UpstreamError to 502 without exposing provider details', () => {
+    const { status, body } = toErrorResponse(new UpstreamError('open-meteo', 'HTTP 503', 503));
+    expect(status).toBe(502);
+    expect(body.error.code).toBe('UPSTREAM_UNAVAILABLE');
+    expect(body.error.message).not.toContain('open-meteo');
   });
 
   it('maps malformed JSON to 400 INVALID_JSON', () => {
