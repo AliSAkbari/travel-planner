@@ -27,13 +27,21 @@ An optional feature (built last) shows the forecast for a chosen date up to 5 da
 ## 2. Architecture
 
 ```
-Browser (Angular SPA) ──HTTPS + Bearer JWT──▶ Express (single Render web service)
-                                               ├─ serves the built Angular app (same origin → no CORS)
-                                               └─ /api/*  routes → controllers → services → clients
-                                                                                           ├─▶ Open-Meteo  (weather)
-                                                                                           ├─▶ Wikipedia   (city summary)
-                                                                                           └─▶ ipapi.co    (IP geolocation)
+Browser (Angular SPA)
+   │ HTTPS, Bearer JWT, one origin (no CORS)
+   ▼
+Firebase Hosting (CDN)
+   ├─ static file exists?  → Angular build (index.html, JS, CSS)
+   ├─ /api/**, /healthz    → rewrite → 2nd-gen HTTPS function "api" (us-west1)
+   │                                      └─ Express: createApp(config)
+   │                                           routes → controllers → services → clients
+   │                                                                              ├─▶ Open-Meteo  (weather)
+   │                                                                              ├─▶ Wikipedia   (city summary)
+   │                                                                              └─▶ ipapi.co    (IP geolocation)
+   └─ anything else        → /index.html (Angular router)
 ```
+
+Locally, the same Express app runs as a plain Node server (`server.ts`), and the Firebase emulators run the Hosting + function setup.
 
 The backend is layered so each layer has one reason to change:
 
@@ -49,12 +57,17 @@ Services depend on clients, never on Express. This lets services be unit tested 
 ## 3. Repository layout
 
 ```
-/                       root package.json: convenience scripts only (build, test, start)
-├─ .nvmrc               Node version (read by nvm and by Render)
-├─ backend/
+/                       root package.json: convenience scripts only
+├─ .nvmrc               Node version (read by nvm)
+├─ firebase.json        Hosting rewrites + function deploy settings
+├─ hosting-placeholder/ temporary page served until the Angular build exists
+├─ backend/             also the Firebase functions source directory
+│  ├─ local.env.example        template for local.env (local dev server)
+│  ├─ firebase.env.example     template for .env.<projectId> (deployed non-secret settings)
 │  ├─ src/
 │  │  ├─ app.ts         builds the Express app without listening (imported by integration tests)
-│  │  ├─ server.ts      entry point; the only file that calls listen()
+│  │  ├─ server.ts      local entry point; the only file that calls listen()
+│  │  ├─ function.ts    production entry point: the app as a Firebase HTTPS function
 │  │  ├─ config/        env loading + validation; fails fast on missing/weak secrets
 │  │  ├─ data/          the predefined city list
 │  │  ├─ routes/
@@ -79,7 +92,7 @@ Services depend on clients, never on Express. This lets services be unit tested 
 
 **Node version:** Node 22 LTS, which the current Angular CLI requires.
 - Pinned in `.nvmrc` and in `engines` as a bounded range (`>=22.12.0 <23`).
-- Render's documentation warns that unbounded ranges resolve to the newest Node release.
+- The deployed function runtime is set separately in `firebase.json` (`"runtime": "nodejs22"`). The Firebase CLI prefers that over `engines`.
 
 **Tooling**
 
@@ -87,7 +100,8 @@ Services depend on clients, never on Express. This lets services be unit tested 
 - **Module system.** The backend is native ESM (`nodenext`), so relative imports carry a `.js` extension.
 - **Prettier** formats code, using one root config.
 - **ESLint** uses the recommended configs from `@eslint/js` and typescript-eslint, plus the type-aware `no-floating-promises` rule.
-- **Environment files.** `.env` is loaded by Node's built-in `--env-file-if-exists` in development, so the `dotenv` package is not needed.
+- **Environment files.** The local dev server loads `backend/local.env` with Node's built-in `--env-file-if-exists`, so the `dotenv` package is not needed.
+  - The file is deliberately **not** named `.env`. The Firebase CLI loads `backend/.env` into the deployed function, where `PORT` is a reserved key, and where `JWT_SECRET` and `DEMO_PASSWORD_HASH` must come from Secret Manager instead. A local `.env` would break deploys.
 
 ## 4. API design
 
@@ -106,7 +120,7 @@ Services depend on clients, never on Express. This lets services be unit tested 
 | 400 | Invalid input (request body, params, or query) |
 | 401 | Wrong credentials, or a missing, malformed, invalid, or expired token. Always sent with `WWW-Authenticate: Bearer` |
 | 404 | Unknown city id, or unknown `/api` route (only reachable with a valid token) |
-| 413 | Request body over 10 kb |
+| 413 | Request body over 10 kb (local server only; see §5.8) |
 | 429 | Login rate limit exceeded |
 | 502 | An upstream API failed or timed out. Every outbound call has a 5-second timeout |
 | 500 | Unexpected error. No stack traces in production |
@@ -134,7 +148,7 @@ Services depend on clients, never on Express. This lets services be unit tested 
 **Design notes**
 
 - **`/healthz` is intentionally public and outside `/api`.**
-  - Render's health checker cannot send a token.
+  - It is for uptime checks and warming the function, which cannot send a token.
   - It returns no application data.
   - It is the only unauthenticated route besides login.
 - **Protected by default.** The API router registers login, then `router.use(requireAuth)`, then every other route. A new route is protected unless it is deliberately placed above that line.
@@ -186,11 +200,11 @@ The brief asks for "the current week", which OpenWeatherMap's free tier cannot p
 | Free limit | ~1,000 requests/day (per provider docs) | 45 requests/minute, non-commercial |
 
 ip-api.com would send users' IP addresses over the internet in plaintext.
-ipapi.co may rate-limit requests coming from shared cloud IP ranges. This is checked on the skeleton deploy (§7), while there is still time to switch provider.
+ipapi.co may rate-limit requests coming from shared cloud IP ranges. This is checked on the skeleton deploy (§5.7), while there is still time to switch provider.
 
 **Using the user's IP, not the server's**
 
-- **Why a header is needed.** On Render, the TCP peer is Render's proxy. The client's address arrives in `X-Forwarded-For`, and each proxy appends to that header.
+- **Why a header is needed.** In production, the TCP peer is Google's infrastructure, not the browser. The client's address arrives in `X-Forwarded-For`, and each proxy appends to that header.
 - **How Express reads it.** We set `app.set('trust proxy', N)`, where N is the exact number of proxy hops. Express then takes the address N hops from the right as `req.ip`.
 - **Spoofing.** A client can put any values in `X-Forwarded-For`. Because proxies append, forged entries end up on the left, and trusting exactly N hops ignores them. `trust proxy: true` would read the leftmost entry, which the client controls.
 - **What spoofing would affect.**
@@ -250,6 +264,7 @@ ipapi.co may rate-limit requests coming from shared cloud IP ranges. This is che
   - Successful logins are not counted, so a legitimate user is never locked out.
   - The limiter runs before validation, so malformed requests count as failed attempts too.
   - It is created inside `createApp`, so each app instance (and each test) has its own counters.
+  - Counters are keyed by `ipKeyGenerator(req.ip)`, which groups IPv6 addresses by /56, because one user typically controls a whole IPv6 range. If `req.ip` is undefined, requests share one `unknown-ip` bucket: still limited, rather than a 500.
 
 **Token**
 
@@ -328,30 +343,68 @@ External responses are cached in a small in-memory `TtlCache`: a `Map` plus expi
 | Bundle size | Larger | Minimal |
 | CSP | More runtime-injected styles to account for (see §9) | Fewer considerations |
 
-### 5.7 Hosting: single Render web service
+### 5.7 Hosting: Firebase Hosting + 2nd-gen Cloud Functions
 
-- **Build.** Build the backend and the frontend.
-- **Start.** `node backend/dist/server.js`.
-- **Serving.** Express serves Angular's build output and falls back to `index.html` for any non-`/api` route.
+The hosting target changed from Render to Firebase before the first deploy.
 
-| | Single service (chosen) | Separate frontend host + API host |
+**Firebase facts that shaped the design** (from Firebase's documentation, checked 2026-09-26):
+- **Plan.** Deploying functions requires the **Blaze** (pay-as-you-go) plan. Its free monthly quotas are 2M invocations, 400K GB-seconds, and 200K CPU-seconds.
+- **Outbound calls.** Calls to non-Google APIs are allowed. Outbound data is free up to 5 GB/month.
+- **Runtime.** Node.js 22 is supported. It is set with `"runtime": "nodejs22"` in `firebase.json`.
+- **Rewrite region.** Hosting rewrites work with any function region. Firebase recommends colocating with Hosting in `us-west1`, `us-central1`, `us-east1`, `europe-west1` or `asia-east1`.
+- **Priority.** Static files take priority over rewrites.
+- **CDN caching.** Function responses are not cached on the CDN unless they send `Cache-Control: public`.
+- **Timeout.** Rewritten requests time out after 60 seconds.
+
+**Serving**
+
+- **Hosting serves the Angular build and the SPA fallback.** Express no longer serves static files or `index.html`.
+- **Rewrites.** `/api/**` and `/healthz` go to the function, so the whole app is on one origin with no CORS configuration.
+
+**The function (`backend/src/function.ts`)**
+
+| Setting | Value | Why |
 |---|---|---|
-| CORS | Not needed (same origin) | Must be configured |
-| Deploys / URLs | One | Two |
-| Env configuration | One place | Two places |
+| `region` | `us-west1` | On Firebase's colocated list, and close to Alberta |
+| `invoker` | `public` | Hosting forwards public traffic to it; our JWT middleware does the authentication |
+| `maxInstances` | 1 | Caps cost if the app is flooded, and keeps one set of in-memory rate-limit counters and caches |
+| `concurrency` / `cpu` | 80 / 1 | Set explicitly instead of relying on defaults; one instance serves up to 80 requests at once |
+| `minInstances` | 0 (default) | Nothing runs while idle, at the cost of cold starts |
+| `secrets` | `JWT_SECRET`, `DEMO_PASSWORD_HASH` | Bound to this function only |
 
-**Rollout: skeleton deploy after the auth phase.** The health endpoint and login are deployed before the external-API work. This verifies two things early, while there is still time to change course:
-- Render's proxy hop count, by inspecting `X-Forwarded-For`,
-- that ipapi.co answers requests from Render's egress IPs.
+**Startup**
+
+- **Config is read in `onInit`.** The Firebase CLI loads the code during deploy, before secret values exist. Reading them at module scope fails the deploy, so the app is built in `onInit`, which runs once per instance at startup.
+- **One validator.** Secret values are merged into the environment object passed to `loadConfig`, so it stays the single place config is validated.
+- **`PORT` is dropped.** It is platform-owned (a reserved key), and the Firebase emulator sets it to a socket path. The function never calls `listen()`, so `PORT` is not ours to validate.
+
+**Why not Firebase's typed params** (`defineString`, `defineInt`) for non-secret settings: they validate and convert values themselves. That would be a second validation layer next to `loadConfig`.
+
+**Rollout: skeleton deploy after the auth phase.** Health and login are deployed before the external-API work. This verifies early, while there is still time to change course:
+- the proxy hop count (`TRUST_PROXY_HOPS`), through Hosting;
+- the same through the function's direct `run.app` URL (see §8);
+- that ipapi.co answers requests from Google's egress IPs.
+
+**Emulator testing.** The Hosting and Functions emulators were used before the first deploy. They surfaced three differences from a plain Node server:
+- **`PORT` is a socket path**, which `loadConfig` rejected. Fixed by dropping `PORT` in `function.ts`.
+- **`req.ip` is `undefined`.** The emulator connects to the function over a pipe and adds no `X-Forwarded-For`. This crashed the login rate limiter; it now falls back to a shared `unknown-ip` bucket (§5.4).
+- **The body is parsed by the framework first.** See §5.8.
 
 ### 5.8 Hardening
 
-- **helmet.** Security headers, plus a CSP that allows Wikimedia image hosts for thumbnails.
+- **helmet.** Security headers on every response from Express.
+  - In production, Express only answers `/api/**` and `/healthz`. Hosting serves the Angular files itself, so the **page's** security headers, including the CSP that allows Wikimedia image hosts, must be set in `firebase.json` `headers` (frontend phase).
+- **No caching of API responses.** Every `/api` response sends `Cache-Control: no-store`. Responses are per-user, and the login response contains a token, so neither the browser nor the CDN may store them.
 - **Login rate limiting.** See §5.4.
-- **Body size limit.** `express.json({ limit: '10kb' })`.
+- **Body size limit: local only.** `express.json({ limit: '10kb' })` applies on the local server.
+  - In production, Google's Functions Framework parses the body before our app runs (limit `1024mb`, in practice capped by Cloud Run at 32 MB), so our parser is skipped. This was confirmed in the emulator: a 20 kb body was accepted.
+  - For the same reason, **malformed JSON in production gets the framework's own HTML 400 response**, not our JSON error shape.
+  - No extra code was added: a check inside our app would run after the body is already read, so it could not protect memory.
 - **Validation: zod.** One small dependency validates environment variables and request inputs, and yields typed results.
 - **Upstream timeouts.** Every outbound call has a 5-second timeout (`AbortSignal.timeout`).
-- **Secrets.** No secrets in the repository: `.env` is gitignored and only `.env.example` is committed.
+- **Secrets.** No secrets in the repository.
+  - In production, `JWT_SECRET` and `DEMO_PASSWORD_HASH` live in Google Secret Manager.
+  - All env files are gitignored; only the `*.example` templates are committed.
 
 ## 6. Testing strategy
 
@@ -376,22 +429,40 @@ External responses are cached in a small in-memory `TtlCache`: a `Map` plus expi
 
 ## 7. Environment variables
 
-| Variable | Purpose |
-|---|---|
-| `NODE_ENV` | `production` on Render |
-| `PORT` | Set by Render |
-| `JWT_SECRET` | HS256 signing secret, ≥ 32 characters |
-| `JWT_EXPIRES_IN_SECONDS` | Token lifetime in seconds (default `3600`) |
-| `DEMO_USERNAME` | Demo user's username |
-| `DEMO_PASSWORD_HASH` | bcrypt hash of the demo password |
-| `TRUST_PROXY_HOPS` | Number of trusted reverse-proxy hops (verified on deploy) |
-| `ENABLE_DIAGNOSTICS` | Temporary. `true` registers `GET /api/diagnostics/network` (token required) for verifying the hosting setup |
+| Variable | Purpose | Local dev server | Deployed function |
+|---|---|---|---|
+| `NODE_ENV` | `development`, `test` or `production` | `local.env` | `.env.<projectId>` (`production`) |
+| `PORT` | Port for `server.ts` | `local.env` | Not used: platform-owned |
+| `JWT_SECRET` | HS256 signing secret, ≥ 32 characters | `local.env` | **Secret Manager** |
+| `JWT_EXPIRES_IN_SECONDS` | Token lifetime in seconds (default `3600`) | `local.env` | `.env.<projectId>` |
+| `DEMO_USERNAME` | Demo user's username | `local.env` | `.env.<projectId>` |
+| `DEMO_PASSWORD_HASH` | bcrypt hash of the demo password | `local.env` | **Secret Manager** |
+| `TRUST_PROXY_HOPS` | Number of trusted reverse-proxy hops | `local.env` (`0`) | `.env.<projectId>` (measured on deploy) |
+| `ENABLE_DIAGNOSTICS` | Temporary. `true` registers `GET /api/diagnostics/network` (token required) | `local.env` | `.env.<projectId>` |
+
+**Files**
+
+- **`backend/local.env`** comes from `local.env.example`.
+- **`backend/.env.<projectId>`** comes from `firebase.env.example`. The Firebase CLI reads it at deploy time.
+- **Emulator overrides:**
+  - `backend/.env.local` holds non-secret settings.
+  - `backend/.secret.local` holds stand-in values for the two secrets.
+
+All of these are gitignored.
 
 ## 8. Known limitations
 
-- **Cold starts.** Render's free tier spins instances down after about 15 minutes idle. The first request afterwards can take tens of seconds, and the in-memory cache is lost.
-- **Cache scope.** The cache is per-instance and does not deduplicate concurrent requests for the same key.
-- **Rate-limit scope.** Login rate-limit counters are in memory: per instance, and reset on restart or spin-down.
+- **Blaze plan required.** Cloud Functions need a billing account. Budget alerts only warn; they do not cap spending. `maxInstances: 1` and the login rate limit bound the exposure.
+- **Cold starts.** With `minInstances: 0`, the first request after idle time starts a new instance. `onInit` then computes the cost-12 dummy bcrypt hash, which added about 3 s to the first request in the emulator; production is measured on deploy. Keeping an instance warm would cost money.
+- **In-memory state.** The cache and rate-limit counters live on the single instance. They are lost when it shuts down, and they do not deduplicate concurrent requests for the same key.
+- **Scaling ceiling.** One instance at 80 concurrent requests is the deliberate cost cap.
+- **60-second request timeout** on requests rewritten through Hosting.
+- **Body limit and JSON errors.** The 10 kb limit and the JSON `INVALID_JSON` response apply only on the local server (§5.8).
+- **Direct-URL bypass of Hosting.** The function also has its own public `run.app` URL.
+  - A request sent there skips Hosting, so it passes through one fewer proxy.
+  - `TRUST_PROXY_HOPS` is set for the Hosting path, so a caller using the direct URL can choose their own `req.ip` by adding one `X-Forwarded-For` entry. That weakens the per-IP login rate limit.
+  - Measured with the diagnostics endpoint and accepted for this demo. Fixes need paid Google Cloud load-balancer features, or depending on undocumented Hosting headers.
+- **Dependency advisory.** `npm audit` reports a moderate advisory in `uuid` (bounds check in its v3/v5/v6 functions when a caller passes a buffer). It comes in through `firebase-admin` → `@google-cloud/storage` → `gaxios`, which pins `uuid@^9`. The app never calls that code path; the package is only installed because `firebase-functions` requires `firebase-admin` as a peer.
 - **No refresh tokens.** Users log in again after the token expires.
 - **A single hard-coded demo user.** There is no user store.
 - **IP geolocation accuracy.** It is approximate, and VPNs and mobile carriers can place users far away.
@@ -402,8 +473,10 @@ External responses are cached in a small in-memory `TtlCache`: a `Map` plus expi
 
 ## 9. Open items to verify
 
-- **Proxy hops.** Render's proxy hop count, which sets `TRUST_PROXY_HOPS`. Checked on the skeleton deploy.
-- **ipapi.co from Render.** Whether ipapi.co serves requests from Render's egress IPs without rate limiting. Checked on the skeleton deploy.
+- **Proxy hops.** The hop count through Firebase Hosting, which sets `TRUST_PROXY_HOPS`. It cannot be measured in the emulator: there, the function has no socket address and receives no `X-Forwarded-For`. Checked on the skeleton deploy.
+- **Direct-URL hops.** The hop count through the function's `run.app` URL, to quantify the bypass in §8. Checked on the skeleton deploy.
+- **Trust-proxy precedence.** Google's Functions Framework enables `trust proxy` on its own Express app. Our app's setting is expected to govern `req.ip`, because Express switches each request to the app handling it. Confirmed by the spoofing test on the skeleton deploy.
+- **ipapi.co from Google Cloud.** Whether ipapi.co serves requests from Google's egress IPs without rate limiting. Checked on the skeleton deploy.
 - **CSP with Angular and Material.** Whether the production build works under helmet's CSP. Angular adds component styles at runtime, and its build can inline critical CSS. Material increases the number of runtime styles. Verified in the browser against the production build during the frontend phase, not assumed.
 
 ## 10. Planned extras (time permitting)
