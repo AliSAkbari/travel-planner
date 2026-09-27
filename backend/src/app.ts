@@ -35,14 +35,7 @@ export function createApp(config: Config): Express {
 
   // Services are created per app instance, so tests never share state.
   const authService = createAuthService(config);
-  app.use(
-    '/api',
-    createApiRouter({
-      authService,
-      enableDiagnostics: config.enableDiagnostics,
-      trustProxyHops: config.trustProxyHops,
-    }),
-  );
+  app.use('/api', createApiRouter({ authService }));
 
   // Any /api path not matched above (and past requireAuth) gets a JSON 404.
   app.use('/api', notFound);

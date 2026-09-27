@@ -15,7 +15,6 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
     trustProxyHops: 0,
     jwt: { secret: 'test-secret-that-is-at-least-32-chars!', expiresInSeconds: 3600 },
     demoUser: { username: TEST_USERNAME, passwordHash: TEST_PASSWORD_HASH },
-    enableDiagnostics: false,
     ...overrides,
   };
 }

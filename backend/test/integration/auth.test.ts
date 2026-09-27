@@ -151,3 +151,43 @@ describe('unknown /api routes', () => {
     expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
   });
 });
+
+// Header shapes measured on the deployed app. Behind Firebase Hosting, the socket
+// peer is Google's front end and X-Forwarded-For is "<client>, <Hosting CDN>",
+// so production runs with TRUST_PROXY_HOPS=2. Here supertest's socket plays the
+// front end; the IPs are documentation addresses.
+describe('login rate limit behind two trusted proxies', () => {
+  const CLIENT = '203.0.113.9';
+  const CDN = '198.51.100.1';
+
+  async function failedLoginFrom(proxyApp: Express, xForwardedFor: string) {
+    return request(proxyApp)
+      .post('/api/auth/login')
+      .set('X-Forwarded-For', xForwardedFor)
+      .send({ username: TEST_USERNAME, password: 'wrong' });
+  }
+
+  it('cannot be dodged by prepending fake X-Forwarded-For entries', async () => {
+    const proxyApp = createApp(makeTestConfig({ trustProxyHops: 2 }));
+
+    // A different forged entry each time; the real client address stays the same.
+    for (let i = 1; i <= 5; i++) {
+      await failedLoginFrom(proxyApp, `6.6.6.${i}, ${CLIENT}, ${CDN}`);
+    }
+
+    expect((await failedLoginFrom(proxyApp, `6.6.6.99, ${CLIENT}, ${CDN}`)).status).toBe(429);
+  });
+
+  it('documents the direct run.app bypass: one hop fewer lets the forged entry become req.ip', async () => {
+    const proxyApp = createApp(makeTestConfig({ trustProxyHops: 2 }));
+
+    // Calling the function URL directly skips the Hosting CDN, so the chain is one
+    // entry shorter and the second-from-right entry is attacker-controlled.
+    for (let i = 1; i <= 5; i++) {
+      await failedLoginFrom(proxyApp, `6.6.6.${i}, ${CLIENT}`);
+    }
+
+    // Each attempt looked like a new client, so the limit never triggers.
+    expect((await failedLoginFrom(proxyApp, `6.6.6.99, ${CLIENT}`)).status).toBe(401);
+  });
+});

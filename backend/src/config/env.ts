@@ -26,12 +26,6 @@ const envSchema = z.object({
       /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/,
       'must be a bcrypt hash (run: npm run hash-password)',
     ),
-
-  // Not z.coerce.boolean(): that would turn the string "false" into true.
-  ENABLE_DIAGNOSTICS: z
-    .enum(['true', 'false'])
-    .default('false')
-    .transform((value) => value === 'true'),
 });
 
 /** Validated, typed application configuration. */
@@ -41,8 +35,6 @@ export interface Config {
   readonly trustProxyHops: number;
   readonly jwt: { readonly secret: string; readonly expiresInSeconds: number };
   readonly demoUser: { readonly username: string; readonly passwordHash: string };
-  /** Temporary: exposes GET /api/diagnostics/network for verifying the hosting setup. */
-  readonly enableDiagnostics: boolean;
 }
 
 /**
@@ -66,6 +58,5 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     trustProxyHops: e.TRUST_PROXY_HOPS,
     jwt: { secret: e.JWT_SECRET, expiresInSeconds: e.JWT_EXPIRES_IN_SECONDS },
     demoUser: { username: e.DEMO_USERNAME, passwordHash: e.DEMO_PASSWORD_HASH },
-    enableDiagnostics: e.ENABLE_DIAGNOSTICS,
   };
 }
