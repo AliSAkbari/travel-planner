@@ -2,6 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { of, throwError, toArray } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 import type { LocationResult } from '../core/api/api.models';
+import { displayName } from './display-name';
 import { errorMessage, toLoadable } from './loadable';
 import { locationMessage } from './location-message';
 import { dayLabel, formatCelsius, fullDate, weatherIcon } from './weather-display';
@@ -104,5 +105,13 @@ describe('toLoadable', () => {
   it('explains network failures', () => {
     expect(errorMessage(new HttpErrorResponse({ status: 0 }))).toContain("Can't reach the server");
     expect(errorMessage(new Error('x'))).toBe('Something went wrong. Please try again.');
+  });
+});
+
+describe('displayName', () => {
+  it('capitalises the first letter only', () => {
+    expect(displayName('demo')).toBe('Demo');
+    expect(displayName('mary-ann')).toBe('Mary-ann');
+    expect(displayName('')).toBe('');
   });
 });
