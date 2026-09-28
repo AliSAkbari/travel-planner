@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, inject, input, signal } from '@angular/core';
+import { Component, type ElementRef, inject, input, signal, viewChild } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -38,10 +38,16 @@ export class LoginPage {
     password: ['', Validators.required],
   });
 
+  private readonly usernameInput =
+    viewChild.required<ElementRef<HTMLInputElement>>('usernameInput');
+  private readonly passwordInput =
+    viewChild.required<ElementRef<HTMLInputElement>>('passwordInput');
+
   protected readonly submitting = signal(false);
   protected readonly error = signal<string | null>(null);
 
   protected submit(): void {
+    this.syncAutofilledValues();
     if (this.form.invalid) {
       this.form.markAllAsTouched(); // show "required" messages
       return;
@@ -57,6 +63,23 @@ export class LoginPage {
         this.error.set(loginErrorMessage(err));
       },
     });
+  }
+
+  /**
+   * Copies what is actually in the inputs into the form. Browsers and password
+   * managers sometimes fill fields without firing the "input" event the form
+   * listens to, which would leave the form thinking the fields are empty.
+   * Submitting is a user action, so the filled values are readable by now.
+   */
+  private syncAutofilledValues(): void {
+    const pairs = [
+      [this.form.controls.username, this.usernameInput()],
+      [this.form.controls.password, this.passwordInput()],
+    ] as const;
+    for (const [control, input] of pairs) {
+      const domValue = input.nativeElement.value;
+      if (domValue !== control.value) control.setValue(domValue);
+    }
   }
 }
 

@@ -11,18 +11,35 @@
       <p class="notice" role="status">Your session has expired. Please log in again.</p>
     }
 
+    <!--
+      floatLabel="always": the label sits above the field from the start, so values
+      filled in by the browser or a password manager can never overlap it. (In this
+      zoneless app, a value inserted without an "input" event isn't noticed until
+      something else triggers change detection, so a floating label would stay down.)
+    -->
     <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
-      <mat-form-field appearance="outline">
+      <mat-form-field appearance="outline" floatLabel="always">
         <mat-label>Username</mat-label>
-        <input matInput formControlName="username" autocomplete="username" required />
+        <!-- No auto-capitalising or autocorrect on phones: it's a username, not prose. -->
+        <input
+          #usernameInput
+          matInput
+          formControlName="username"
+          autocomplete="username"
+          autocapitalize="none"
+          autocorrect="off"
+          spellcheck="false"
+          required
+        />
         @if (form.controls.username.hasError('required')) {
           <mat-error>Username is required.</mat-error>
         }
       </mat-form-field>
 
-      <mat-form-field appearance="outline">
+      <mat-form-field appearance="outline" floatLabel="always">
         <mat-label>Password</mat-label>
         <input
+          #passwordInput
           matInput
           type="password"
           formControlName="password"

@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Config } from '../config/env.js';
 import { HttpError } from '../utils/httpError.js';
 
@@ -27,6 +28,19 @@ const invalidCredentials = () =>
 const invalidToken = () => new HttpError(401, 'INVALID_TOKEN', 'Token is invalid');
 
 /**
+ * Case-insensitive username comparison that takes the same time whether or not
+ * the names match. Both sides are normalised (trimmed, lower-cased), then
+ * hashed: timingSafeEqual requires equal-length inputs, and SHA-256 digests
+ * always are, so the input length isn't revealed either.
+ * Exported for unit tests.
+ */
+export function usernamesMatch(typed: string, configured: string): boolean {
+  const digest = (value: string) =>
+    createHash('sha256').update(value.trim().toLowerCase()).digest();
+  return timingSafeEqual(digest(typed), digest(configured));
+}
+
+/**
  * Creates the auth service for the configured demo user.
  * A factory (rather than module-level state) so each app instance and each
  * test gets its own service built from its own config.
@@ -44,19 +58,26 @@ export function createAuthService(config: Pick<Config, 'jwt' | 'demoUser'>): Aut
   );
 
   async function login(username: string, password: string): Promise<LoginResult> {
-    const isKnownUser = username === demoUser.username;
+    // Usernames are case-insensitive ("Demo" works); passwords stay case-sensitive.
+    const isKnownUser = usernamesMatch(username, demoUser.username);
     const passwordMatches = await bcrypt.compare(
       password,
       isKnownUser ? demoUser.passwordHash : dummyHash,
     );
     if (!isKnownUser || !passwordMatches) throw invalidCredentials();
 
+    // The token carries the configured spelling, not what was typed, so every
+    // session for this user has the same `sub` (verifyToken compares it exactly).
     const token = jwt.sign({}, jwtConfig.secret, {
       algorithm: 'HS256',
-      subject: username,
+      subject: demoUser.username,
       expiresIn: jwtConfig.expiresInSeconds,
     });
-    return { token, expiresIn: jwtConfig.expiresInSeconds, user: { username } };
+    return {
+      token,
+      expiresIn: jwtConfig.expiresInSeconds,
+      user: { username: demoUser.username },
+    };
   }
 
   function verifyToken(token: string): AuthUser {
