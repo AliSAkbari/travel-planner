@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createAuthService } from '../../../src/services/auth.service.js';
+import { createAuthService, usernamesMatch } from '../../../src/services/auth.service.js';
 import { HttpError } from '../../../src/utils/httpError.js';
 import { makeTestConfig, TEST_PASSWORD, TEST_USERNAME } from '../../helpers/testConfig.js';
 
@@ -46,6 +46,23 @@ describe('login', () => {
   it('rejects a wrong password with INVALID_CREDENTIALS', async () => {
     await expect(auth.login(TEST_USERNAME, 'wrong')).rejects.toMatchObject({
       status: 401,
+      code: 'INVALID_CREDENTIALS',
+    });
+  });
+
+  it.each(['Demo', 'DEMO', '  demo  '])(
+    'accepts the username case-insensitively (%j)',
+    async (typed) => {
+      const result = await auth.login(typed, TEST_PASSWORD);
+      // The token and response carry the configured spelling, not what was typed.
+      expect(result.user).toEqual({ username: TEST_USERNAME });
+      expect((jwt.verify(result.token, secret) as jwt.JwtPayload).sub).toBe(TEST_USERNAME);
+      expect(auth.verifyToken(result.token)).toEqual({ username: TEST_USERNAME });
+    },
+  );
+
+  it('keeps the password case-sensitive', async () => {
+    await expect(auth.login(TEST_USERNAME, TEST_PASSWORD.toUpperCase())).rejects.toMatchObject({
       code: 'INVALID_CREDENTIALS',
     });
   });
@@ -121,5 +138,16 @@ describe('verifyToken', () => {
   it('rejects a signed token whose payload is a plain string', () => {
     const stringPayload = jwt.sign('just-a-string', secret);
     expect(catchHttpError(() => auth.verifyToken(stringPayload)).code).toBe('INVALID_TOKEN');
+  });
+});
+
+describe('usernamesMatch', () => {
+  it('ignores case and surrounding whitespace', () => {
+    expect(usernamesMatch(' DeMo ', 'demo')).toBe(true);
+  });
+
+  it('rejects different names, including ones of different length', () => {
+    expect(usernamesMatch('demo2', 'demo')).toBe(false);
+    expect(usernamesMatch('', 'demo')).toBe(false);
   });
 });

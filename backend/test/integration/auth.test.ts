@@ -44,6 +44,13 @@ describe('POST /api/auth/login', () => {
     });
   });
 
+  it('accepts the username in any case, returning the configured one', async () => {
+    const res = await login(TEST_USERNAME.toUpperCase(), TEST_PASSWORD);
+
+    expect(res.status).toBe(200);
+    expect(res.body.user).toEqual({ username: TEST_USERNAME });
+  });
+
   it('returns the identical response for an unknown username', async () => {
     const wrongPassword = await login(TEST_USERNAME, 'wrong-password');
     const unknownUser = await login('nobody', TEST_PASSWORD);
