@@ -27,9 +27,21 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "{sunny,partly_cloudy_day,cloud,foggy,rainy_light,rainy,weather_snowy,thunderstorm,help,logout,location_on,water_drop,air,error,refresh,travel_explore}.svg",
+                "input": "node_modules/@material-symbols/svg-400/outlined",
+                "output": "icons"
+              },
+              {
+                "glob": "LICENSE",
+                "input": "node_modules/@material-symbols/svg-400",
+                "output": "icons"
               }
             ],
             "styles": [
+              "node_modules/@fontsource/roboto/400.css",
+              "node_modules/@fontsource/roboto/500.css",
               "src/styles.scss"
             ]
           },
@@ -47,7 +59,15 @@
                   "maximumError": "8kB"
                 }
               ],
-              "outputHashing": "all"
+              "outputHashing": "all",
+              "optimization": {
+                "scripts": true,
+                "fonts": true,
+                "styles": {
+                  "minify": true,
+                  "inlineCritical": false
+                }
+              }
             },
             "development": {
               "optimization": false,
@@ -67,7 +87,10 @@
               "buildTarget": "frontend:build:development"
             }
           },
-          "defaultConfiguration": "development"
+          "defaultConfiguration": "development",
+          "options": {
+            "proxyConfig": "proxy.conf.json"
+          }
         },
         "test": {
           "builder": "@angular/build:unit-test"
