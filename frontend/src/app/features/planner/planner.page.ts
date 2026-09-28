@@ -1,12 +1,13 @@
 import { Component, computed, inject, linkedSignal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSelectModule } from '@angular/material/select';
 import { filter, type Observable, switchMap } from 'rxjs';
 import { ApiService } from '../../core/api/api.service';
 import { LOADING, type Loadable, toLoadable } from '../../shared/loadable';
-import { FALLBACK_CITY_ID, locationMessage } from '../../shared/location-message';
+import { FALLBACK_CITY_ID, locationBanner } from '../../shared/location-message';
 import { CurrentWeatherCard } from './current-weather-card';
 import { ForecastCard } from './forecast-card';
 import { SummaryCard } from './summary-card';
@@ -21,6 +22,7 @@ import { SummaryCard } from './summary-card';
 @Component({
   selector: 'app-planner-page',
   imports: [
+    MatButtonModule,
     MatFormFieldModule,
     MatSelectModule,
     MatIconModule,
@@ -61,11 +63,14 @@ export class PlannerPage {
 
   protected readonly selectedCityName = computed(() => this.cityName(this.selectedCityId()));
 
-  protected readonly bannerMessage = computed(() => {
+  /** Null while detection is still running; then depends on what's selected (see locationBanner). */
+  protected readonly banner = computed(() => {
     const location = this.location();
     if (location.status === 'loading') return null;
-    return locationMessage(location.status === 'ok' ? location.data : null, (id) =>
-      this.cityName(id),
+    return locationBanner(
+      location.status === 'ok' ? location.data : null,
+      this.selectedCityId(),
+      (id) => this.cityName(id),
     );
   });
 

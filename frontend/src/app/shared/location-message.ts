@@ -30,3 +30,34 @@ export function locationMessage(
   }
   return `Detected: ${place} — no listed city nearby, showing default: ${chosen}`;
 }
+
+export interface LocationBanner {
+  message: string;
+  /** Offered once the user has picked another city: reselects the detected (or default) one. */
+  returnTo: { cityId: string; label: string } | null;
+}
+
+/**
+ * What the banner shows, given what is selected now.
+ * - The "home" city (detected match, or the default) is selected: the full
+ *   explanation from locationMessage.
+ * - Another city is selected: a short reminder of where the user is, plus a
+ *   button back to the home city. The long "showing nearest: …" sentence would
+ *   be wrong at that point, because it isn't what's being shown.
+ */
+export function locationBanner(
+  location: LocationResult | null,
+  selectedCityId: string | null,
+  cityName: (cityId: string) => string,
+): LocationBanner {
+  const homeCityId = location?.cityId ?? FALLBACK_CITY_ID;
+  if (selectedCityId === null || selectedCityId === homeCityId) {
+    return { message: locationMessage(location, cityName), returnTo: null };
+  }
+
+  const detected = location?.detected;
+  const message = detected
+    ? `Your location: ${detected.region ? `${detected.city}, ${detected.region}` : detected.city}`
+    : "Couldn't detect your location";
+  return { message, returnTo: { cityId: homeCityId, label: `Back to ${cityName(homeCityId)}` } };
+}

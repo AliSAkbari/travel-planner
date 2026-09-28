@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { LocationResult } from '../core/api/api.models';
 import { displayName } from './display-name';
 import { errorMessage, toLoadable } from './loadable';
-import { locationMessage } from './location-message';
+import { locationBanner, locationMessage } from './location-message';
 import { dayLabel, formatCelsius, fullDate, weatherIcon } from './weather-display';
 
 const names: Record<string, string> = { calgary: 'Calgary', edmonton: 'Edmonton' };
@@ -113,5 +113,52 @@ describe('displayName', () => {
     expect(displayName('demo')).toBe('Demo');
     expect(displayName('mary-ann')).toBe('Mary-ann');
     expect(displayName('')).toBe('');
+  });
+});
+
+describe('locationBanner', () => {
+  const nearest: LocationResult = {
+    detected: { city: 'Airdrie', region: 'Alberta', country: 'CA', lat: 51.29, lon: -114.01 },
+    cityId: 'calgary',
+    match: 'nearest',
+    distanceKm: 27,
+  };
+  const tooFar: LocationResult = {
+    detected: { city: 'Lisbon', region: null, country: 'PT', lat: 38.7, lon: -9.1 },
+    cityId: 'calgary',
+    match: 'default',
+    distanceKm: null,
+  };
+  const failed: LocationResult = {
+    detected: null,
+    cityId: 'calgary',
+    match: 'default',
+    distanceKm: null,
+  };
+
+  it.each([
+    ['nearest match', nearest],
+    ['too far', tooFar],
+    ['lookup failed', failed],
+    ['request failed', null],
+  ])('%s, home city selected: the full message and no button', (_case, location) => {
+    const banner = locationBanner(location, 'calgary', cityName);
+    expect(banner).toEqual({ message: locationMessage(location, cityName), returnTo: null });
+  });
+
+  it.each([
+    ['nearest match', nearest, 'Your location: Airdrie, Alberta'],
+    ['too far', tooFar, 'Your location: Lisbon'],
+    ['lookup failed', failed, "Couldn't detect your location"],
+    ['request failed', null, "Couldn't detect your location"],
+  ])('%s, another city selected: a short reminder and a way back', (_case, location, message) => {
+    expect(locationBanner(location, 'edmonton', cityName)).toEqual({
+      message,
+      returnTo: { cityId: 'calgary', label: 'Back to Calgary' },
+    });
+  });
+
+  it('shows the full message before anything is selected', () => {
+    expect(locationBanner(nearest, null, cityName).returnTo).toBeNull();
   });
 });

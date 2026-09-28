@@ -72,6 +72,30 @@ describe('PlannerPage', () => {
     backend.expectOne('/api/cities/calgary/weather');
   });
 
+  it('after picking another city, shows a short reminder and a button back to the detected city', async () => {
+    const fixture = await renderWithLocation();
+    const el = fixture.nativeElement as HTMLElement;
+    const page = fixture.componentInstance as unknown as {
+      selectedCityId: { (): string | null; set(v: string): void };
+    };
+
+    page.selectedCityId.set('tokyo');
+    fixture.detectChanges();
+    expect(el.querySelector('.banner p')?.textContent?.trim()).toBe(
+      'Your location: Airdrie, Alberta',
+    );
+    const back = el.querySelector<HTMLButtonElement>('.banner button')!;
+    expect(back.textContent?.trim()).toBe('Back to Calgary');
+
+    back.click();
+    fixture.detectChanges();
+    expect(page.selectedCityId()).toBe('calgary');
+    expect(el.querySelector('.banner p')?.textContent).toContain(
+      'showing nearest: Calgary (27 km)',
+    );
+    expect(el.querySelector('.banner button')).toBeNull();
+  });
+
   it('renders the forecast with "Today", weekday names and °C', async () => {
     const fixture = await renderWithLocation();
     backend.expectOne('/api/cities/calgary/summary').flush({

@@ -19,15 +19,22 @@
     </mat-form-field>
   }
 
-  <!-- role="status": announced politely once detection finishes. -->
-  <p class="banner" role="status">
-    @if (bannerMessage(); as message) {
-      <mat-icon svgIcon="location_on" aria-hidden="true" />
-      {{ message }}
-    } @else {
-      Detecting your location…
+  <div class="banner">
+    <!-- role="status": announced politely when detection finishes or the message changes. -->
+    <p role="status">
+      @if (banner(); as b) {
+        <mat-icon svgIcon="location_on" aria-hidden="true" />
+        {{ b.message }}
+      } @else {
+        Detecting your location…
+      }
+    </p>
+    @if (banner()?.returnTo; as returnTo) {
+      <button mat-stroked-button type="button" (click)="selectedCityId.set(returnTo.cityId)">
+        {{ returnTo.label }}
+      </button>
     }
-  </p>
+  </div>
 </section>
 
 @if (selectedCityId()) {
