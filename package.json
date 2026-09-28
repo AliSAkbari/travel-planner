@@ -1,19 +1,20 @@
 {
   "name": "travel-planner",
   "private": true,
-  "description": "Travel planner: Angular frontend + Express/TypeScript backend",
+  "description": "Travel planner: Angular frontend + Express/TypeScript backend on Firebase",
   "engines": {
     "node": ">=22.12.0 <23"
   },
   "scripts": {
-    "install:all": "npm --prefix backend ci",
+    "install:all": "npm --prefix backend ci && npm --prefix frontend ci",
     "dev": "npm --prefix backend run dev",
-    "build": "npm --prefix backend run build",
-    "start": "npm --prefix backend start",
-    "test": "npm --prefix backend test",
-    "test:coverage": "npm --prefix backend run test:coverage",
+    "dev:frontend": "npm --prefix frontend start",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "test": "npm --prefix backend test && npm --prefix frontend test",
+    "test:coverage": "npm --prefix backend run test:coverage && npm --prefix frontend run test:coverage",
     "lint": "npm --prefix backend run lint",
     "typecheck": "npm --prefix backend run typecheck",
-    "emulators": "npm --prefix backend run build && firebase emulators:start --only functions,hosting"
+    "emulators": "npm run build && firebase emulators:start --only functions,hosting",
+    "deploy": "firebase deploy --only functions,hosting"
   }
 }

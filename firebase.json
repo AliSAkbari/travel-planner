@@ -1,17 +1,67 @@
 {
   "hosting": {
-    "public": "hosting-placeholder",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "public": "frontend/dist/frontend/browser",
+    "predeploy": ["npm --prefix frontend run build"],
+    "ignore": ["**/.*"],
     "rewrites": [
       {
         "source": "/api/**",
-        "function": { "functionId": "api", "region": "us-west1" }
+        "function": {
+          "functionId": "api",
+          "region": "us-west1"
+        }
       },
       {
         "source": "/health",
-        "function": { "functionId": "api", "region": "us-west1" }
+        "function": {
+          "functionId": "api",
+          "region": "us-west1"
+        }
       },
-      { "source": "**", "destination": "/index.html" }
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://thumb.wikimedia.org https://upload.wikimedia.org; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "strict-origin-when-cross-origin"
+          },
+          {
+            "key": "Strict-Transport-Security",
+            "value": "max-age=31536000; includeSubDomains"
+          },
+          {
+            "key": "Permissions-Policy",
+            "value": "camera=(), microphone=(), geolocation=()"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "**/*.@(js|css|woff|woff2)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      }
     ]
   },
   "functions": [
