@@ -1,0 +1,71 @@
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, inject, input, signal } from '@angular/core';
+import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { Router } from '@angular/router';
+import { safeReturnUrl } from '../../core/auth/auth.guard';
+import { AuthService } from '../../core/auth/auth.service';
+import { errorMessage } from '../../shared/loadable';
+
+@Component({
+  selector: 'app-login-page',
+  imports: [
+    ReactiveFormsModule,
+    MatButtonModule,
+    MatCardModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MatProgressSpinnerModule,
+  ],
+  templateUrl: './login.page.html',
+  styleUrl: './login.page.scss',
+})
+export class LoginPage {
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+
+  /** Query params, bound as inputs (withComponentInputBinding). */
+  readonly returnUrl = input<string>();
+  readonly expired = input<string>();
+
+  // Non-nullable: reset() restores '' instead of null, so values are always strings.
+  protected readonly form = inject(NonNullableFormBuilder).group({
+    username: ['', Validators.required],
+    password: ['', Validators.required],
+  });
+
+  protected readonly submitting = signal(false);
+  protected readonly error = signal<string | null>(null);
+
+  protected submit(): void {
+    if (this.form.invalid) {
+      this.form.markAllAsTouched(); // show "required" messages
+      return;
+    }
+    this.submitting.set(true);
+    this.error.set(null);
+
+    const { username, password } = this.form.getRawValue();
+    this.auth.login(username, password).subscribe({
+      next: () => void this.router.navigateByUrl(safeReturnUrl(this.returnUrl())),
+      error: (err: unknown) => {
+        this.submitting.set(false);
+        this.error.set(loginErrorMessage(err));
+      },
+    });
+  }
+}
+
+/** Login-specific wording; anything else falls back to the shared message. */
+export function loginErrorMessage(error: unknown): string {
+  if (error instanceof HttpErrorResponse) {
+    if (error.status === 401) return 'Invalid username or password.';
+    if (error.status === 429)
+      return 'Too many failed attempts. Please wait 15 minutes and try again.';
+  }
+  return errorMessage(error);
+}

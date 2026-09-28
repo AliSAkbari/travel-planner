@@ -1,0 +1,45 @@
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 8px;
+}
+
+.city-select {
+  width: 280px;
+  max-width: 100%;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 20px; // aligns with the form field, whose hint area adds space below
+  font: var(--mat-sys-body-large);
+  color: var(--mat-sys-on-surface-variant);
+
+  mat-icon {
+    flex-shrink: 0;
+    color: var(--mat-sys-primary);
+  }
+}
+
+.error {
+  color: var(--mat-sys-error);
+}
+
+// Phone: one column. Wider: description beside current weather, forecast full width.
+.grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+
+  @media (min-width: 840px) {
+    grid-template-columns: 3fr 2fr;
+
+    .forecast {
+      grid-column: 1 / -1;
+    }
+  }
+}

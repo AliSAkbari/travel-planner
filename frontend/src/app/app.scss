@@ -1,0 +1,64 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.toolbar {
+  gap: 8px;
+  background: var(--mat-sys-primary);
+  color: var(--mat-sys-on-primary);
+}
+
+.title {
+  margin: 0;
+  font: var(--mat-sys-title-large);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.username {
+  font: var(--mat-sys-label-large);
+  // Long usernames are cut with an ellipsis instead of pushing the button off screen.
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// Phones: the logout button shows only its icon (it keeps its aria-label).
+@media (max-width: 480px) {
+  .logout-text {
+    display: none;
+  }
+}
+
+.toolbar button {
+  color: inherit;
+}
+
+.content {
+  flex: 1;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.credits {
+  padding: 16px;
+  text-align: center;
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+
+  p {
+    margin: 4px 0;
+  }
+
+  a {
+    color: var(--mat-sys-primary);
+  }
+}
