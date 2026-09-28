@@ -79,12 +79,15 @@ Services depend on clients, never on Express. This lets services be unit tested 
 │  └─ test/
 │     ├─ unit/
 │     └─ integration/   supertest against app.ts
-├─ frontend/
+├─ frontend/            Angular 22 (standalone components, zoneless, Vitest)
+│  ├─ proxy.conf.json   ng serve forwards /api to the backend on :3000
 │  └─ src/app/
-│     ├─ core/          AuthService, authInterceptor, authGuard, ApiService
+│     ├─ core/          ApiService + response types, AuthService, authInterceptor,
+│     │                 authGuard/guestGuard, icon registration
+│     ├─ shared/        Loadable<T>, weather formatting, banner messages (pure functions)
 │     └─ features/
-│        ├─ login/
-│        └─ planner/    city selector, description card, current weather, weekly forecast
+│        ├─ login/      login page
+│        └─ planner/    city select, location banner, summary / current weather / forecast cards
 └─ docs/
 ```
 
@@ -349,10 +352,31 @@ External responses are cached in a small in-memory `TtlCache`: a `Map` plus expi
 
 **State**
 
-- **Signals** hold synchronous UI state: selected city, loading and error flags, auth state.
+- **Signals** hold synchronous UI state: the session (`AuthService`), the selected city, and each card's state.
+- **`linkedSignal` for the selected city.** It starts as the detected city (or Calgary if detection failed), and the user's choice then overrides it. No effect or manual subscription is needed to "set the default once".
 - **RxJS** is used where streams need coordination.
-  - City changes feed a `switchMap`, which cancels the in-flight request when the user switches cities quickly. Stale data for a previous city can never render.
+  - The selected city feeds a `switchMap`. When the user switches cities, the previous city's requests are unsubscribed, which makes `HttpClient` abort them. A slow response for an old city can never overwrite a newer one; a unit test asserts the cancellation.
   - Results are bridged to templates with `toSignal`.
+- **One state type for every card:** `Loadable<T>` = `loading | ok(data) | error(message)`. Templates branch on it with `@if`, and strict template type-checking narrows the union, so `data` is only reachable in the `ok` branch. Every card has a loading state, an error state and a "Try again" button.
+
+**Session handling**
+
+- **Token.** It is kept in `sessionStorage` behind a signal; the username comes from the token's `sub` claim.
+- **Interceptor.** It attaches the token to `/api/*` requests only. Static files such as the icon SVGs never get it.
+- **Guards.** `authGuard` checks the token's `exp`; `guestGuard` keeps logged-in users off the login page.
+- **Redirects.** After login the user returns to `returnUrl`, which is accepted only if it is a same-app path. `safeReturnUrl` rejects `https://…`, `//…` and `/\…`, which would otherwise be an open redirect.
+
+**Presentation**
+
+- **Temperatures** are shown in °C with the unit ("14 °C"), rounded to whole degrees.
+- **Forecast days** read "Today", then short weekday names ("Mon"). Day names are computed from the city's own calendar date, interpreted as UTC, so the viewer's timezone can't shift them.
+- **Detected-location banner.** It uses the three exact messages from §5.3, built by a pure, unit-tested function.
+- **Responsive.** One column on phones, where the forecast wraps 4 + 3. From 840 px, the description sits beside the current weather and the forecast spans the full width. On phones the logout button is icon-only (it keeps its `aria-label`) and long usernames are cut with an ellipsis. Checked in headless Chrome at 390 px and 1280 px: no horizontal scrolling.
+- **Accessibility.**
+  - Labelled form fields (`mat-label`) and `autocomplete` hints.
+  - Errors in `role="alert"`; the location banner in `role="status"`.
+  - Decorative icons are `aria-hidden`, and each forecast day has one spoken sentence ("Today: Overcast, high 18 °C, low 2 °C").
+  - Only Material 3's paired "on-X over X" colour tokens are used, which are designed for WCAG AA contrast.
 
 **UI: Angular Material**
 
@@ -363,7 +387,9 @@ External responses are cached in a small in-memory `TtlCache`: a `Map` plus expi
   - Layout is a responsive card grid.
 - **Setup.**
   - Installed with `ng add @angular/material`, so Material's version matches Angular's.
-  - Icons are self-hosted from an npm package, not loaded from Google Fonts. This keeps every asset on our own origin and avoids a third-party request.
+  - **No third-party requests.** `ng add` links Roboto and the icon font from Google Fonts. Both are replaced with self-hosted copies: Roboto from `@fontsource/roboto`.
+  - **Icons are individual SVGs, not the icon font.** The Material Symbols font is **4 MB**, because it contains every icon. Instead, the build copies only the 16 SVGs the app uses (0.3–1.3 KB each) from `@material-symbols/svg-400` (Apache-2.0; its LICENSE ships alongside). `MatIconRegistry` registers them, so templates still use `<mat-icon svgIcon="…">`.
+  - **Initial download: about 96 KB compressed.** Each page is lazy-loaded.
 
 | | Angular Material (chosen) | No component library |
 |---|---|---|
@@ -427,7 +453,23 @@ The hosting target changed from Render to Firebase before the first deploy.
 ### 5.8 Hardening
 
 - **helmet.** Security headers on every response from Express.
-  - In production, Express only answers `/api/**` and `/health`. Hosting serves the Angular files itself, so the **page's** security headers, including the CSP that allows Wikimedia image hosts, must be set in `firebase.json` `headers` (frontend phase).
+  - In production, Express only answers `/api/**` and `/health`. Hosting serves the Angular files itself, so the **page's** security headers are set in `firebase.json`.
+- **Page CSP** (`firebase.json`):
+
+  | Directive | Value | Why |
+  |---|---|---|
+  | `script-src` | `'self'` | No inline scripts. The build's critical-CSS inlining is turned off (`inlineCritical: false`) because it adds an `onload` handler |
+  | `style-src` | `'self' 'unsafe-inline'` | Angular and Material add component styles as `<style>` tags at runtime. A nonce is not an option on static hosting, which can't generate one per request |
+  | `img-src` | `'self'`, `thumb.wikimedia.org`, `upload.wikimedia.org` | City photos (all 12 currently come from `thumb.wikimedia.org`) |
+  | `font-src`, `connect-src` | `'self'` | Self-hosted fonts; the API is same-origin |
+  | `object-src` / `frame-ancestors` | `'none'` | No plugins; the app can't be framed (clickjacking) |
+
+  - **Verified, not assumed.** The production build was loaded in headless Chrome with this exact policy enforced, logged in, and showed a city: no violations. A deliberately stricter policy (no inline styles, no Wikimedia images) **did** produce violations, which proves both allowances are needed. After deploying, the live headers were checked with `curl`, and the login page was loaded under the live policy with no errors.
+- **Other page headers:** `nosniff`, a referrer policy, a permissions policy (no camera, microphone or geolocation), and HSTS. Firebase Hosting replaces our HSTS value with its own stronger one (`preload`).
+- **Caching:**
+  - Pages are `no-cache`, so a new deploy is seen immediately.
+  - Content-hashed JS, CSS and font files are cached for a year (`immutable`).
+  - When several header rules match, the later one wins; this was verified in production.
 - **No caching of API responses.** Every `/api` response sends `Cache-Control: no-store`. Responses are per-user, and the login response contains a token, so neither the browser nor the CDN may store them.
 - **Login rate limiting.** See §5.4.
 - **Body size limit: local only.** `express.json({ limit: '10kb' })` applies on the local server.
@@ -453,9 +495,25 @@ The hosting target changed from Render to Firebase before the first deploy.
 
 **Frontend**
 
-- The interceptor, guard, and `AuthService` are tested with `HttpTestingController`.
-  - The interceptor tests include a case proving that a 401 from the login endpoint does **not** clear the token or redirect.
-- Key components get a few tests.
+41 Vitest tests through `ng test`, with about 96% line coverage (`npm run test:coverage`):
+
+- **Interceptor:** the token is sent to `/api/*` only; a 401 from a data endpoint logs out and redirects; a 401 from the login endpoint does **not**.
+- **`AuthService` and guards:**
+  - session restore;
+  - expired and malformed tokens;
+  - the redirect with `returnUrl`;
+  - `safeReturnUrl` rejects other sites.
+- **Login page**, tested with the real interceptor:
+  - a wrong password stays on the form with "Invalid username or password.";
+  - a 429 has its own message;
+  - the return URL is honoured, but never an external one.
+- **Planner page:**
+  - the detected city is pre-selected, with the banner text;
+  - "Today", weekday names and °C formatting;
+  - switching city cancels the previous requests;
+  - the error state and "Try again" work.
+- **Pure helpers:** the three banner messages, day labels and temperature formatting.
+- **Browser check.** A throwaway headless-Chrome script, outside the repo, logs in through the real UI at phone and desktop widths, checks for horizontal scrolling and console errors, and optionally enforces a CSP.
 
 **End-to-end (optional)**
 
@@ -486,6 +544,8 @@ All of these are gitignored.
 
 ## 8. Known limitations
 
+- **Inline styles are allowed by the CSP** (`style-src 'unsafe-inline'`). Angular and Material inject `<style>` tags at runtime, and static hosting can't issue the per-request nonce that would avoid this. Scripts stay strict (`'self'` only).
+
 - **Blaze plan required.** Cloud Functions need a billing account. Budget alerts only warn; they do not cap spending. `maxInstances: 1` and the login rate limit bound the exposure.
 - **Cold starts.** With `minInstances: 0`, the first request after idle time starts a new instance. `onInit` then computes the cost-12 dummy bcrypt hash, which added about 3 s to the first request in the emulator; production is measured on deploy. Keeping an instance warm would cost money.
 - **In-memory state.** The cache and rate-limit counters live on the single instance. They are lost when it shuts down, and they do not deduplicate concurrent requests for the same key.
@@ -512,7 +572,7 @@ All of these are gitignored.
 - ~~**Direct-URL hops.**~~ **Resolved:** one fewer; the bypass is measured and documented (§8).
 - ~~**Trust-proxy precedence.**~~ **Resolved:** our app's setting governs `req.ip`, confirmed by the spoof test.
 - ~~**ipapi.co from Google Cloud.**~~ **Resolved:** it returns 429, so the provider changed to ip2location.io (§5.3).
-- **CSP with Angular and Material.** Whether the production build works under helmet's CSP. Angular adds component styles at runtime, and its build can inline critical CSS. Material increases the number of runtime styles. Verified in the browser against the production build during the frontend phase, not assumed.
+- ~~**CSP with Angular and Material.**~~ **Resolved:** the page CSP lives in `firebase.json`. It needs `'unsafe-inline'` for styles only, and was verified in a real browser (§5.8).
 
 ## 10. Planned extras (time permitting)
 
