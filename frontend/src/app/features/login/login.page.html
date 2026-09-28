@@ -1,0 +1,51 @@
+<mat-card class="login-card" appearance="outlined">
+  <mat-card-header>
+    <mat-card-title><h2 class="heading">Log in</h2></mat-card-title>
+    <mat-card-subtitle
+      >Plan your trip: city info, current weather and the week ahead.</mat-card-subtitle
+    >
+  </mat-card-header>
+
+  <mat-card-content>
+    @if (expired()) {
+      <p class="notice" role="status">Your session has expired. Please log in again.</p>
+    }
+
+    <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+      <mat-form-field appearance="outline">
+        <mat-label>Username</mat-label>
+        <input matInput formControlName="username" autocomplete="username" required />
+        @if (form.controls.username.hasError('required')) {
+          <mat-error>Username is required.</mat-error>
+        }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Password</mat-label>
+        <input
+          matInput
+          type="password"
+          formControlName="password"
+          autocomplete="current-password"
+          required
+        />
+        @if (form.controls.password.hasError('required')) {
+          <mat-error>Password is required.</mat-error>
+        }
+      </mat-form-field>
+
+      <!-- role="alert" makes screen readers announce the error as soon as it appears. -->
+      @if (error(); as message) {
+        <p class="error" role="alert">{{ message }}</p>
+      }
+
+      <button mat-flat-button type="submit" [disabled]="submitting()">
+        @if (submitting()) {
+          <mat-spinner diameter="20" aria-label="Logging in" />
+        } @else {
+          Log in
+        }
+      </button>
+    </form>
+  </mat-card-content>
+</mat-card>

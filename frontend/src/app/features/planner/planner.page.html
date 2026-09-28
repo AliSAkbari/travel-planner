@@ -1,0 +1,48 @@
+<section class="controls" aria-label="Choose a city">
+  @let cityList = cities();
+  @if (cityList.status === 'error') {
+    <p class="error" role="alert">Couldn't load the city list: {{ cityList.message }}</p>
+  } @else {
+    <mat-form-field appearance="outline" class="city-select">
+      <mat-label>City</mat-label>
+      <mat-select
+        [value]="selectedCityId()"
+        (valueChange)="selectedCityId.set($event)"
+        [disabled]="cityList.status !== 'ok'"
+      >
+        @if (cityList.status === 'ok') {
+          @for (city of cityList.data; track city.id) {
+            <mat-option [value]="city.id">{{ city.name }}, {{ city.country }}</mat-option>
+          }
+        }
+      </mat-select>
+    </mat-form-field>
+  }
+
+  <!-- role="status": announced politely once detection finishes. -->
+  <p class="banner" role="status">
+    @if (bannerMessage(); as message) {
+      <mat-icon svgIcon="location_on" aria-hidden="true" />
+      {{ message }}
+    } @else {
+      Detecting your location…
+    }
+  </p>
+</section>
+
+@if (selectedCityId()) {
+  <div class="grid">
+    <app-summary-card
+      class="summary"
+      [state]="summary()"
+      [cityName]="selectedCityName()"
+      (retry)="retry()"
+    />
+    <app-current-weather-card
+      [state]="weather()"
+      [cityName]="selectedCityName()"
+      (retry)="retry()"
+    />
+    <app-forecast-card class="forecast" [state]="weather()" (retry)="retry()" />
+  </div>
+}
