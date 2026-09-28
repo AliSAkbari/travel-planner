@@ -288,6 +288,9 @@ So the temporary diagnostics endpoint asked seven keyless providers about the sa
   - A `hash-password` script generates the bcrypt hash.
   - The plaintext password is never committed. Reviewers receive credentials with the submission email.
 - **Hashing: bcryptjs** (pure JavaScript). The native `bcrypt` package needs node-gyp builds, which are fragile on Windows and on some hosts. The speed difference is irrelevant for one user.
+- **Case-insensitive username, case-sensitive password.**
+  - The typed username is trimmed and lower-cased, then compared with `crypto.timingSafeEqual` on SHA-256 digests of both sides. The digests have equal length, which `timingSafeEqual` requires, so neither the match nor the input's length changes the timing.
+  - The token's `sub` and the login response always carry the **configured** spelling. "Demo" and "demo" therefore produce the same session, and `verifyToken` can keep its exact check.
 - **No username enumeration.**
   - A wrong username and a wrong password return the identical 401 response.
   - For an unknown username, `bcrypt.compare` still runs, against a dummy hash precomputed at startup with the same cost factor as the real hash. Both paths do the same work, so response time does not reveal whether a username exists (measured locally: 289 ms vs 263 ms at cost 12).
@@ -361,16 +364,26 @@ External responses are cached in a small in-memory `TtlCache`: a `Map` plus expi
 
 **Session handling**
 
-- **Token.** It is kept in `sessionStorage` behind a signal; the username comes from the token's `sub` claim.
+- **Token.** It is kept in `sessionStorage` behind a signal; the username comes from the token's `sub` claim. The toolbar shows it capitalised ("Demo"), for display only.
 - **Interceptor.** It attaches the token to `/api/*` requests only. Static files such as the icon SVGs never get it.
 - **Guards.** `authGuard` checks the token's `exp`; `guestGuard` keeps logged-in users off the login page.
 - **Redirects.** After login the user returns to `returnUrl`, which is accepted only if it is a same-app path. `safeReturnUrl` rejects `https://…`, `//…` and `/\…`, which would otherwise be an open redirect.
+- **Autofill and zoneless change detection.** When testing on real devices, autofilled values overlapped the login labels.
+  - **Not the cause:** the CDK's autofill-detection styles. They are in the build.
+  - **The cause:** the app is **zoneless**. A value inserted without an `input` event (as some password managers and mobile autofill do) never triggers change detection, so `MatInput` never re-reads the field and its label stays down. Reproduced in headless Chrome: value-only and change-only insertion left the labels down; value plus an `input` event floated them.
+  - **The fix:**
+    - `floatLabel="always"` on the two login fields, so no insertion method can overlap a label;
+    - on submit, the form copies the inputs' actual values, so fields filled without events are not rejected as empty.
+  - **Mobile keyboards.** The username field also turns off auto-capitalisation, autocorrect and spellcheck.
 
 **Presentation**
 
 - **Temperatures** are shown in °C with the unit ("14 °C"), rounded to whole degrees.
 - **Forecast days** read "Today", then short weekday names ("Mon"). Day names are computed from the city's own calendar date, interpreted as UTC, so the viewer's timezone can't shift them.
-- **Detected-location banner.** It uses the three exact messages from §5.3, built by a pure, unit-tested function.
+- **Detected-location banner.** It uses the three exact messages from §5.3, built by pure, unit-tested functions.
+  - **While the detected (or default) city is selected,** it shows the full explanation.
+  - **Once the user picks another city,** that sentence would no longer describe what's on screen. The banner then shows a short "Your location: Calgary, Alberta" (or "Couldn't detect your location") with a **"Back to Calgary"** button that reselects the home city.
+- **Favicon.** An SVG of the toolbar's globe icon, white on the theme's primary colour, so it is visible on light and dark browser tabs.
 - **Responsive.** One column on phones, where the forecast wraps 4 + 3. From 840 px, the description sits beside the current weather and the forecast spans the full width. On phones the logout button is icon-only (it keeps its `aria-label`) and long usernames are cut with an ellipsis. Checked in headless Chrome at 390 px and 1280 px: no horizontal scrolling.
 - **Accessibility.**
   - Labelled form fields (`mat-label`) and `autocomplete` hints.
