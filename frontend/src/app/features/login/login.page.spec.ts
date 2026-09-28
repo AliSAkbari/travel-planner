@@ -82,6 +82,41 @@ describe('LoginPage', () => {
     expect(router.navigateByUrl).toHaveBeenCalledWith('/');
   });
 
+  it('keeps the labels floated from the start, so autofilled values never overlap them', () => {
+    const fixture = TestBed.createComponent(LoginPage);
+    fixture.detectChanges();
+    const labels = (fixture.nativeElement as HTMLElement).querySelectorAll('.mdc-floating-label');
+    expect(labels).toHaveLength(2);
+    labels.forEach((label) => expect(label.classList).toContain('mdc-floating-label--float-above'));
+  });
+
+  it('submits values a password manager filled in without firing input events', () => {
+    const fixture = TestBed.createComponent(LoginPage);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    // Set .value directly, with no events: the form itself never hears about it.
+    el.querySelector<HTMLInputElement>('input[autocomplete="username"]')!.value = 'demo';
+    el.querySelector<HTMLInputElement>('input[autocomplete="current-password"]')!.value = 'secret';
+
+    el.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+
+    expect(backend.expectOne(LOGIN_URL).request.body).toEqual({
+      username: 'demo',
+      password: 'secret',
+    });
+  });
+
+  it('turns off auto-capitalisation and autocorrect on the username field', () => {
+    const fixture = TestBed.createComponent(LoginPage);
+    fixture.detectChanges();
+    const input = (fixture.nativeElement as HTMLElement).querySelector(
+      'input[autocomplete="username"]',
+    )!;
+    expect(input.getAttribute('autocapitalize')).toBe('none');
+    expect(input.getAttribute('autocorrect')).toBe('off');
+    expect(input.getAttribute('spellcheck')).toBe('false');
+  });
+
   it('does not submit an empty form', () => {
     const fixture = TestBed.createComponent(LoginPage);
     fixture.detectChanges();
