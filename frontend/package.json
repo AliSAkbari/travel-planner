@@ -5,8 +5,9 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
-    "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test --watch=false",
+    "test:watch": "ng test",
+    "test:coverage": "ng test --watch=false --coverage"
   },
   "private": true,
   "packageManager": "npm@10.9.9",
@@ -28,6 +29,7 @@
     "@angular/cli": "^22.2.0",
     "@angular/compiler-cli": "^22.2.0",
     "@material-symbols/svg-400": "^0.47.5",
+    "@vitest/coverage-v8": "^5.0.2",
     "jsdom": "^30.0.0",
     "prettier": "^3.8.1",
     "typescript": "~6.0.2",
