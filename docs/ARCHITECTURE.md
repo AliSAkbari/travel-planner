@@ -560,7 +560,7 @@ All of these are gitignored.
 - **Inline styles are allowed by the CSP** (`style-src 'unsafe-inline'`). Angular and Material inject `<style>` tags at runtime, and static hosting can't issue the per-request nonce that would avoid this. Scripts stay strict (`'self'` only).
 
 - **Blaze plan required.** Cloud Functions need a billing account. Budget alerts only warn; they do not cap spending. `maxInstances: 1` and the login rate limit bound the exposure.
-- **Cold starts.** With `minInstances: 0`, the first request after idle time starts a new instance. `onInit` then computes the cost-12 dummy bcrypt hash, which added about 3 s to the first request in the emulator; production is measured on deploy. Keeping an instance warm would cost money.
+- **Cold starts.** With `minInstances: 0`, the first request after idle time starts a new instance. `onInit` then computes the cost-12 dummy bcrypt hash, which added about 3 s to the first request in the emulator. In production a warm login takes about 530 ms (mostly bcrypt at cost 12, plus the round trip to us-west1). Keeping an instance warm would cost money.
 - **In-memory state.** The cache and rate-limit counters live on the single instance. They are lost when it shuts down, and they do not deduplicate concurrent requests for the same key.
 - **Scaling ceiling.** One instance at 80 concurrent requests is the deliberate cost cap.
 - **60-second request timeout** on requests rewritten through Hosting.
