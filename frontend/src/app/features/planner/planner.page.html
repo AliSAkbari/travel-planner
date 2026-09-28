@@ -5,6 +5,11 @@
   } @else {
     <mat-form-field appearance="outline" class="city-select">
       <mat-label>City</mat-label>
+      <!--
+        One-way [value] + (valueChange) instead of a form control: selectedCityId is a
+        linkedSignal, so the user's choice overrides the detected default by .set().
+        Disabled until the list has loaded.
+      -->
       <mat-select
         [value]="selectedCityId()"
         (valueChange)="selectedCityId.set($event)"
@@ -37,6 +42,9 @@
   </div>
 </section>
 
+<!-- Cards appear once a city is chosen (detected, default, or picked), so nothing
+     loads for a city the user never saw. Summary and weather load in parallel; the
+     current-weather and forecast cards share one weather request. -->
 @if (selectedCityId()) {
   <div class="grid">
     <app-summary-card

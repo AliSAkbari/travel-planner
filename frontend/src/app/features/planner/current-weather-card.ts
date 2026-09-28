@@ -29,6 +29,7 @@ import { LoadStatus } from './load-status';
               <p class="label">{{ now.label }}</p>
             </div>
           </div>
+          <!-- A description list: screen readers announce each value with its term. -->
           <dl class="details">
             <div>
               <dt>Feels like</dt>
@@ -104,6 +105,7 @@ export class CurrentWeatherCard {
   readonly cityName = input.required<string>();
   readonly retry = output();
 
+  // Plain functions exposed to the template (templates can't call imports directly).
   protected readonly icon = weatherIcon;
   protected readonly celsius = formatCelsius;
   protected readonly round = Math.round;
